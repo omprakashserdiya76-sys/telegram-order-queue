@@ -10,7 +10,7 @@ const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर को एक्टिव रखने के लिए सर्वर
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Secure Queue Active'); });
+const server = http.createServer((req, res) => { res.end('Global Queue Active'); });
 server.listen(port);
 
 // गूगल शीट क्रेडेंशियल सेटअप
@@ -24,7 +24,10 @@ const auth = new google.auth.JWT(
 const sheets = google.sheets({ version: 'v4', auth });
 
 let globalOrderNum = 100;
-const userSessions = new Map();
+
+// ग्लोबल कतार (Queue) सिस्टम ताकि हर रिसेलर के मैसेज में 15 सेकंड का अंतर रहे
+let globalQueue = [];
+let isProcessingQueue = false;
 
 async function saveToSheet(orderNum, reseller, userId, address) {
   try {
@@ -38,49 +41,35 @@ async function saveToSheet(orderNum, reseller, userId, address) {
   } catch (err) { console.error("Sheet Error:", err.message); }
 }
 
-// कतार का सारा डेटा प्रोसेस करने का मुख्य फंक्शन
-async function processUserQueue(userId, resellerName) {
-  const session = userSessions.get(userId);
-  if (!session) return;
-
-  const items = session.messages;
-  userSessions.delete(userId); // कतार खाली करें
-
-  // पूरी कतार में चेक करें कि कहीं कोई वैध एड्रेस है या नहीं
-  let combinedText = items.map(i => i.text).join("\n").trim();
-  const hasPin = /\b\d{6}\b/.test(combinedText);
-  const hasPhone = /\b\d{10,12}\b/.test(combinedText);
-  const isRealOrder = hasPin && hasPhone;
-
-  let assignedOrderNum = null;
-  if (isRealOrder) {
-    globalOrderNum++;
-    assignedOrderNum = globalOrderNum;
+// कतार को एक-एक करके 15 सेकंड के गैप पर प्रोसेस करने वाला मुख्य इंजन
+async function processGlobalQueue() {
+  if (globalQueue.length === 0) {
+    isProcessingQueue = false;
+    return;
   }
 
-  // कतार में आए सभी आइटम्स को एक-एक करके ग्रुप में भेजें (बिना मिक्स हुए)
-  for (const item of items) {
-    if (item.type === 'photo') {
-      let caption = `👤 ${resellerName}\nID: ${userId}`;
-      if (assignedOrderNum) {
-        caption += `\n📦 *ORDER #ORD${assignedOrderNum}*`;
-      }
-      if (item.text !== "") {
-        caption += `\n\n📝 विवरण: ${item.text}`;
-      }
-      await bot.sendPhoto(adminGroupId, item.fileId, { caption: caption, parse_mode: 'Markdown' });
-    } 
-    else if (item.type === 'text') {
-      if (isRealOrder) {
-        let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
-        await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
-        // शीट में सिर्फ एड्रेस वाला टेक्स्ट ही सेव करें
-        await saveToSheet(assignedOrderNum, resellerName, userId, item.text);
-      } else {
-        // सामान्य मैसेज या Hi/Hello
-        await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n💬: ${item.text}`);
-      }
+  isProcessingQueue = true;
+  const task = globalQueue.shift(); // कतार से पहला मैसेज उठाएं
+
+  try {
+    if (task.actionType === 'send_photo') {
+      await bot.sendPhoto(adminGroupId, task.fileId, { caption: task.caption, parse_mode: task.parseMode });
+    } else if (task.actionType === 'send_message') {
+      await bot.sendMessage(adminGroupId, task.text, { parse_mode: task.parseMode });
     }
+  } catch (error) {
+    console.error("Queue Send Error:", error.message);
+  }
+
+  // अगला मैसेज ठीक 15 सेकंड (15000 मिलीसेकंड) के बाद ही जाएगा, चाहे रिसेलर्स ने एक साथ भेजा हो
+  setTimeout(processGlobalQueue, 15000);
+}
+
+// कतार में नया टास्क जोड़ने का फंक्शन
+function addToGlobalQueue(task) {
+  globalQueue.push(task);
+  if (!isProcessingQueue) {
+    processGlobalQueue();
   }
 }
 
@@ -114,29 +103,58 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- नियम २: रिसेलर्स के इनपुट को कतार (Queue) में डालना ---
+  // --- नियम २: रिसेलर्स के आने वाले मैसेज (प्राइवेट चैट) ---
   if (chatId !== adminGroupId) {
-    let currentSession = userSessions.get(chatId);
+    
+    // शुद्ध एड्रेस की सटीक पहचान (लंबा टेक्स्ट + पिनकोड + फोन नंबर होना अनिवार्य)
+    const isLongEnough = cleanText.length > 30;
+    const hasPin = /\b\d{6}\b/.test(cleanText);
+    const hasPhone = /\b\d{10,12}\b/.test(cleanText);
+    const isAddress = isLongEnough && hasPin && hasPhone;
 
-    if (!currentSession) {
-      currentSession = { messages: [], timeoutId: null };
-      userSessions.set(chatId, currentSession);
-    }
-
-    // टाइमर को रीसेट करें ताकि 20 सेकंड का गैप मिले
-    if (currentSession.timeoutId) clearTimeout(currentSession.timeoutId);
-
-    // कतार में डेटा पुश करें
+    // ए) अगर रिसेलर ने फोटो या स्टिकर/इमोजी मीडिया भेजा है
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
-      currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText });
-    } else if (cleanText !== "") {
-      currentSession.messages.push({ type: 'text', text: cleanText });
+      let photoCaption = `👤 ${resellerName}\nID: ${chatId}`;
+      if (cleanText !== "") {
+        photoCaption += `\n📝 विवरण: ${cleanText}`;
+      }
+      
+      // कतार में डालें - बिना किसी ऑर्डर आईडी (#ORD) के, कम से कम शब्दों में
+      addToGlobalQueue({
+        actionType: 'send_photo',
+        fileId: photoId,
+        caption: photoCaption
+      });
+      return;
     }
 
-    // 20 सेकंड शांत रहने के बाद ही ग्रुप में डेटा प्रोसेस होगा
-    currentSession.timeoutId = setTimeout(() => {
-      processUserQueue(chatId, resellerName);
-    }, 20000);
+    // बी) अगर रिसेलर ने शुद्ध एड्रेस भेजा है (तभी ऑर्डर नंबर जनरेट होगा और शीट में जाएगा)
+    if (isAddress) {
+      globalOrderNum++;
+      let orderHeader = `👤 ${resellerName}\nID: ${chatId}\n\n📦 *NEW ORDER #ORD${globalOrderNum}*\n\n${cleanText}`;
+      
+      // शीट में तुरंत सेव करें ताकि डेटा सुरक्षित रहे
+      await saveToSheet(globalOrderNum, resellerName, chatId, cleanText);
+      
+      // कतार में जोड़ें ताकि 15 सेकंड के अंतराल पर ग्रुप में पोस्ट हो
+      addToGlobalQueue({
+        actionType: 'send_message',
+        text: orderHeader,
+        parseMode: 'Markdown'
+      });
+      return;
+    }
+
+    // सी) स्टिकर, इमोजी या कोई छोटा-मोटा मैसेज (Hi, Hello, Ok, या दिल ❤️ का स्टिकर)
+    if (cleanText !== "") {
+      // कम से कम शब्दों में ग्रुप में भेजना (कोई ऑर्डर नंबर नहीं लगेगा)
+      let shortMessage = `👤 ${resellerName}\nID: ${chatId}\n💬: ${cleanText}`;
+      
+      addToGlobalQueue({
+        actionType: 'send_message',
+        text: shortMessage
+      });
+    }
   }
 });
