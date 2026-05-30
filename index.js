@@ -8,9 +8,9 @@ const spreadsheetId = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर को एक्टिव रखने के लिए सर्वर
+// रेंडर को लाइव रखने के लिए सर्वर
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Global Queue Active'); });
+const server = http.createServer((req, res) => { res.end('User Based Lock Active'); });
 server.listen(port);
 
 // गूगल शीट क्रेडेंशियल सेटअप
@@ -25,8 +25,9 @@ const sheets = google.sheets({ version: 'v4', auth });
 
 let globalOrderNum = 100;
 
-// ग्लोबल कतार (Queue) सिस्टम ताकि हर रिसेलर के मैसेज में 15 सेकंड का अंतर रहे
-let globalQueue = [];
+// रिसेलर्स के मैसेजेस को मैनेज करने के लिए कतार सिस्टम
+const userSessions = new Map();
+let globalUserQueue = [];
 let isProcessingQueue = false;
 
 async function saveToSheet(orderNum, reseller, userId, address) {
@@ -41,36 +42,60 @@ async function saveToSheet(orderNum, reseller, userId, address) {
   } catch (err) { console.error("Sheet Error:", err.message); }
 }
 
-// कतार को एक-एक करके 15 सेकंड के गैप पर प्रोसेस करने वाला मुख्य इंजन
-async function processGlobalQueue() {
-  if (globalQueue.length === 0) {
+// पूरे यूजर का पैकेट एक साथ ग्रुप में भेजने वाला इंजन
+async function processGlobalUserQueue() {
+  if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
     return;
   }
 
   isProcessingQueue = true;
-  const task = globalQueue.shift(); // कतार से पहला मैसेज उठाएं
+  const userTask = globalUserQueue.shift(); // कतार से अगले यूजर का पूरा पैकेट उठाएं
+  const { userId, resellerName, items } = userTask;
 
-  try {
-    if (task.actionType === 'send_photo') {
-      await bot.sendPhoto(adminGroupId, task.fileId, { caption: task.caption, parse_mode: task.parseMode });
-    } else if (task.actionType === 'send_message') {
-      await bot.sendMessage(adminGroupId, task.text, { parse_mode: task.parseMode });
+  // चेक करें कि इस पूरे पैकेट में कहीं कोई वैध एड्रेस है या नहीं
+  let combinedText = items.map(i => i.text).join("\n").trim();
+  const isLongEnough = combinedText.length > 30;
+  const hasPin = /\b\d{6}\b/.test(combinedText);
+  const hasPhone = /\b\d{10,12}\b/.test(combinedText);
+  const isRealOrder = isLongEnough && hasPin && hasPhone;
+
+  let assignedOrderNum = null;
+  if (isRealOrder) {
+    globalOrderNum++;
+    assignedOrderNum = globalOrderNum;
+  }
+
+  // इस यूजर के जितने भी मैसेज/फोटो हैं, वे तुरंत बिना किसी गैप के एक साथ ग्रुप में जाएंगे
+  for (const item of items) {
+    try {
+      if (item.type === 'photo') {
+        let caption = `👤 ${resellerName}\nID: ${userId}`;
+        if (assignedOrderNum) {
+          caption += `\n📦 *ORDER #ORD${assignedOrderNum}*`;
+        }
+        if (item.text !== "") {
+          caption += `\n\n📝 विवरण: ${item.text}`;
+        }
+        await bot.sendPhoto(adminGroupId, item.fileId, { caption: caption, parse_mode: 'Markdown' });
+      } 
+      else if (item.type === 'text') {
+        if (isRealOrder) {
+          let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
+          await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
+          await saveToSheet(assignedOrderNum, resellerName, userId, item.text);
+        } else {
+          // सामान्य मैसेज या स्टिकर टेक्स्ट (बिना ऑर्डर आईडी के)
+          await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n💬: ${item.text}`);
+        }
+      }
+    } catch (e) {
+      console.error("Sending Error:", e.message);
     }
-  } catch (error) {
-    console.error("Queue Send Error:", error.message);
   }
 
-  // अगला मैसेज ठीक 15 सेकंड (15000 मिलीसेकंड) के बाद ही जाएगा, चाहे रिसेलर्स ने एक साथ भेजा हो
-  setTimeout(processGlobalQueue, 15000);
-}
-
-// कतार में नया टास्क जोड़ने का फंक्शन
-function addToGlobalQueue(task) {
-  globalQueue.push(task);
-  if (!isProcessingQueue) {
-    processGlobalQueue();
-  }
+  // अगले यूजर (रिसेलर B) का नंबर ठीक 15 सेकंड के लॉक के बाद ही आएगा
+  setTimeout(processGlobalUserQueue, 15000);
 }
 
 bot.on('message', async (msg) => {
@@ -103,58 +128,42 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- नियम २: रिसेलर्स के आने वाले मैसेज (प्राइवेट चैट) ---
+  // --- नियम २: रिसेलर्स के इनपुट को कतार (Queue) में डालना ---
   if (chatId !== adminGroupId) {
-    
-    // शुद्ध एड्रेस की सटीक पहचान (लंबा टेक्स्ट + पिनकोड + फोन नंबर होना अनिवार्य)
-    const isLongEnough = cleanText.length > 30;
-    const hasPin = /\b\d{6}\b/.test(cleanText);
-    const hasPhone = /\b\d{10,12}\b/.test(cleanText);
-    const isAddress = isLongEnough && hasPin && hasPhone;
+    let currentSession = userSessions.get(chatId);
 
-    // ए) अगर रिसेलर ने फोटो या स्टिकर/इमोजी मीडिया भेजा है
+    // अगर इस यूजर का नया सेशन है, तो बनाएं
+    if (!currentSession) {
+      currentSession = { userId: chatId, resellerName: resellerName, messages: [], timeoutId: null };
+      userSessions.set(chatId, currentSession);
+    }
+
+    // रिसेलर जब तक फटाफट टाइप कर रहा या फोटो सेंड कर रहा है (2 सेकंड का छोटा होल्ड ताकि सारे मैसेज इकट्ठे हो जाएं)
+    if (currentSession.timeoutId) clearTimeout(currentSession.timeoutId);
+
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
-      let photoCaption = `👤 ${resellerName}\nID: ${chatId}`;
-      if (cleanText !== "") {
-        photoCaption += `\n📝 विवरण: ${cleanText}`;
+      currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText });
+    } else if (cleanText !== "") {
+      currentSession.messages.push({ type: 'text', text: cleanText });
+    }
+
+    // जैसे ही इस रिसेलर ने भेजना बंद किया, उसका पूरा पैकेट मेन ग्लोबल कतार में चला जाएगा
+    currentSession.timeoutId = setTimeout(() => {
+      const sessionToSend = userSessions.get(chatId);
+      if (sessionToSend && sessionToSend.messages.length > 0) {
+        globalUserQueue.push({
+          userId: sessionToSend.userId,
+          resellerName: sessionToSend.resellerName,
+          items: [...sessionToSend.messages]
+        });
+        userSessions.delete(chatId); // इस यूजर का सेशन खाली करें
+
+        // अगर कतार रुकी हुई है, तो इंजन चालू करें
+        if (!isProcessingQueue) {
+          processGlobalUserQueue();
+        }
       }
-      
-      // कतार में डालें - बिना किसी ऑर्डर आईडी (#ORD) के, कम से कम शब्दों में
-      addToGlobalQueue({
-        actionType: 'send_photo',
-        fileId: photoId,
-        caption: photoCaption
-      });
-      return;
-    }
-
-    // बी) अगर रिसेलर ने शुद्ध एड्रेस भेजा है (तभी ऑर्डर नंबर जनरेट होगा और शीट में जाएगा)
-    if (isAddress) {
-      globalOrderNum++;
-      let orderHeader = `👤 ${resellerName}\nID: ${chatId}\n\n📦 *NEW ORDER #ORD${globalOrderNum}*\n\n${cleanText}`;
-      
-      // शीट में तुरंत सेव करें ताकि डेटा सुरक्षित रहे
-      await saveToSheet(globalOrderNum, resellerName, chatId, cleanText);
-      
-      // कतार में जोड़ें ताकि 15 सेकंड के अंतराल पर ग्रुप में पोस्ट हो
-      addToGlobalQueue({
-        actionType: 'send_message',
-        text: orderHeader,
-        parseMode: 'Markdown'
-      });
-      return;
-    }
-
-    // सी) स्टिकर, इमोजी या कोई छोटा-मोटा मैसेज (Hi, Hello, Ok, या दिल ❤️ का स्टिकर)
-    if (cleanText !== "") {
-      // कम से कम शब्दों में ग्रुप में भेजना (कोई ऑर्डर नंबर नहीं लगेगा)
-      let shortMessage = `👤 ${resellerName}\nID: ${chatId}\n💬: ${cleanText}`;
-      
-      addToGlobalQueue({
-        actionType: 'send_message',
-        text: shortMessage
-      });
-    }
+    }, 2000); // 2 सेकंड का बफर ताकि एक यूजर की फोटो और टेक्स्ट आपस में जुड़ सकें
   }
 });
