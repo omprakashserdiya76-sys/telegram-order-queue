@@ -1,0 +1,14 @@
+{
+  "name": "telegram-order-queue",
+  "version": "1.0.0",
+  "description": "Telegram Anti-Mixing Queue Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0",
+    "googleapis": "^126.0.0"
+  }
+}
+
