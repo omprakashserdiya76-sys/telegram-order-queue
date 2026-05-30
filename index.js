@@ -10,7 +10,7 @@ const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर को एक्टिव रखने के लिए सर्वर
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Perfect System Live'); });
+const server = http.createServer((req, res) => { res.end('Strict Sorting System Live'); });
 server.listen(port);
 
 // गूगल शीट क्रेडेंशियल सेटअप
@@ -25,12 +25,10 @@ const sheets = google.sheets({ version: 'v4', auth });
 
 let globalOrderNum = 100;
 
-// रिसेलर्स कतार डेटाबेस
 const userSessions = new Map();
 let globalUserQueue = [];
 let isProcessingQueue = false;
 
-// एडमिन ग्रुप के मैसेज की ओरिजिनल रिसेलर मैसेज ID ट्रैक करने के लिए मैप
 const adminToResellerMsgMap = new Map();
 
 async function saveToSheet(orderNum, reseller, userId, address) {
@@ -56,34 +54,53 @@ async function processGlobalUserQueue() {
   const userTask = globalUserQueue.shift(); 
   const { userId, resellerName, items } = userTask;
 
-  // शुद्ध एड्रेस की पहचान
-  let combinedText = items.map(i => i.text).join("\n").trim();
-  const isLongEnough = combinedText.length > 30;
-  const hasPin = /\b\d{6}\b/.test(combinedText);
-  const hasPhone = /\b\d{10,12}\b/.test(combinedText);
-  const isRealOrder = isLongEnough && hasPin && hasPhone;
-
+  // यह चेक करने के लिए कि इस पूरे पैकेट में असली एड्रेस कौनसा है
+  let mainAddressItem = null;
   let assignedOrderNum = null;
-  if (isRealOrder) {
+
+  // सभी आइटम्स को चेक करें और असली बड़े एड्रेस की पहचान करें
+  for (const item of items) {
+    if (item.type === 'text') {
+      const txt = item.text.trim();
+      const isLongEnough = txt.length > 30;
+      const hasPin = /\b\d{6}\b/.test(txt);
+      const hasPhone = /\b\d{10,12}\b/.test(txt);
+      
+      if (isLongEnough && hasPin && hasPhone) {
+        mainAddressItem = item;
+        item.isRealAddress = true; // इसे असली एड्रेस मार्क कर दें
+        break;
+      }
+    }
+  }
+
+  // अगर असली एड्रेस मिल गया है, तो ही नया ऑर्डर नंबर जनरेट करें
+  if (mainAddressItem) {
     globalOrderNum++;
     assignedOrderNum = globalOrderNum;
   }
 
-  // --- इंटरनेट गड़बड़ फिक्स: मैसेज सॉर्टिंग नियम ---
-  // नंबर 1 पर एड्रेस (टेक्स्ट), नंबर 2 पर फोटो, नंबर 3 पर स्टिकर/अन्य चीजें
+  // --- सख्त नियम: लाइन वाइज सॉर्टिंग (1. एड्रेस, 2. फोटो, 3. स्टिकर) ---
   items.sort((a, b) => {
-    if (a.type === 'text' && b.type !== 'text') return -1;
-    if (a.type !== 'text' && b.type === 'text') return 1;
+    // क) असली एड्रेस हमेशा सबसे पहले (नंबर 1 पर) आएगा
+    if (a.isRealAddress) return -1;
+    if (b.isRealAddress) return 1;
+
+    // ख) फोटो हमेशा दूसरे नंबर पर आएगी
+    if (a.type === 'photo' && b.type !== 'photo') return -1;
+    if (a.type !== 'photo' && b.type === 'photo') return 1;
+
+    // ग) छोटे मैसेज या स्टिकर हमेशा सबसे आखिर में जाएंगे
     return 0;
   });
 
-  // इस यूजर का सारा सामान बिना किसी गैप के तुरंत एक साथ ग्रुप में जाएगा
+  // अब बिना किसी गैप के लाइन से मैसेज ग्रुप में भेजना शुरू करें
   for (const item of items) {
     try {
       let sentMsg = null;
 
       if (item.type === 'photo') {
-        // फोटो के नीचे कोई ऑर्डर आईडी (#ORD) नहीं लगेगी, सिर्फ नाम और आईडी
+        // फोटो पर कोई ऑर्डर आईडी नहीं लगेगी
         let caption = `👤 ${resellerName}\nID: ${userId}`;
         if (item.text !== "") {
           caption += `\n\n📝 विवरण: ${item.text}`;
@@ -91,18 +108,17 @@ async function processGlobalUserQueue() {
         sentMsg = await bot.sendPhoto(adminGroupId, item.fileId, { caption: caption });
       } 
       else if (item.type === 'text') {
-        if (isRealOrder) {
-          // ऑर्डर आईडी केवल और केवल मुख्य एड्रेस वाले टेक्स्ट पर लगेगी
+        if (item.isRealAddress) {
+          // ऑर्डर आईडी केवल और केवल मुख्य एड्रेस पर ही लगेगी
           let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
           sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
           await saveToSheet(assignedOrderNum, resellerName, userId, item.text);
         } else {
-          // सामान्य मैसेज या स्टिकर
+          // स्टिकर, इमोजी या छोटे मैसेज पर कोई आईडी नहीं लगेगी, यह बिना आईडी के जाएगा
           sentMsg = await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n💬: ${item.text}`);
         }
       }
 
-      // एडमिन के पास जो मैसेज गया उसकी ID को रिसेलर की ओरिजिनल मैसेज ID के साथ मैप करें
       if (sentMsg && item.originalMsgId) {
         adminToResellerMsgMap.set(sentMsg.message_id.toString(), item.originalMsgId);
       }
@@ -111,7 +127,7 @@ async function processGlobalUserQueue() {
     }
   }
 
-  // अगले रिसेलर का पैकेट ठीक 15 सेकंड के लॉक के बाद ही खुलेगा
+  // अगले रिसेलर का पैकेट ठीक 15 सेकंड के सख्त लॉक के बाद ही खुलेगा
   setTimeout(processGlobalUserQueue, 15000);
 }
 
@@ -133,8 +149,6 @@ bot.on('message', async (msg) => {
     if (idMatch) {
       const targetId = idMatch[1].trim();
       const adminRepliedMsgId = msg.reply_to_message.message_id.toString();
-      
-      // मैप से रिसेलर की ओरिजिनल मैसेज ID निकालें ताकि उसे कोट किया जा सके
       const originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
       
       let replyOptions = {};
@@ -169,24 +183,25 @@ bot.on('message', async (msg) => {
 
     if (currentSession.timeoutId) clearTimeout(currentSession.timeoutId);
 
-    // कतार में डालते समय रिसेलर के ओरिजिनल मैसेज की ID भी सुरक्षित रखें
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
       currentSession.messages.push({ 
         type: 'photo', 
         fileId: photoId, 
         text: cleanText,
-        originalMsgId: msg.message_id 
+        originalMsgId: msg.message_id,
+        isRealAddress: false
       });
     } else if (cleanText !== "") {
       currentSession.messages.push({ 
         type: 'text', 
         text: cleanText,
-        originalMsgId: msg.message_id 
+        originalMsgId: msg.message_id,
+        isRealAddress: false
       });
     }
 
-    // रिसेलर को पूरा 25 सेकंड का समय दिया गया है
+    // रिसेलर को पूरा 25 सेकंड का समय
     currentSession.timeoutId = setTimeout(() => {
       const sessionToSend = userSessions.get(chatId);
       if (sessionToSend && sessionToSend.messages.length > 0) {
