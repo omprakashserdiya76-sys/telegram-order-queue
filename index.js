@@ -27,8 +27,8 @@ try {
     process.exit(1);
 }
 
-// 3. Initialize Telegram Bot (Using Webhook to prevent polling conflicts on Render)
-const bot = new TelegramBot(token, { polling: true });
+// 3. Initialize Telegram Bot safely for Render (Fixes the deployment loop)
+const bot = new TelegramBot(token, { polling: { autoStart: true, params: { timeout: 10 } } });
 
 // 4. Initialize Google Sheets API
 const auth = new google.auth.JWT(
