@@ -1,251 +1,184 @@
 const TelegramBot = require('node-telegram-bot-api');
 const { google } = require('googleapis');
-const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
+// 1. Environment Variables Validation
 const token = process.env.BOT_TOKEN;
-const adminGroupId = process.env.ADMIN_GROUP_ID;
 const spreadsheetId = process.env.SPREADSHEET_ID;
+const adminGroupId = process.env.ADMIN_GROUP_ID;
 
-// रेंडर के Environment Variables से नई चाबी उठाना
-const rawKey = process.env.GOOGLE_PRIVATE_KEY || "";
-const privateKey = rawKey.replace(/\\n/g, '\n');
+if (!token || !spreadsheetId || !adminGroupId) {
+    console.error("❌ Critical Error: Missing required environment variables (BOT_TOKEN, SPREADSHEET_ID, or ADMIN_GROUP_ID).");
+    process.exit(1);
+}
 
+// 2. Load Google Service Account Credentials from local JSON file
+let credentials;
+try {
+    const credsPath = path.join(__dirname, 'service_account.json');
+    if (!fs.existsSync(credsPath)) {
+        throw new Error(`service_account.json file not found at ${credsPath}`);
+    }
+    credentials = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+    console.log("✅ Service account credentials loaded successfully from file.");
+} catch (error) {
+    console.error("❌ Google Credentials Error:", error.message);
+    process.exit(1);
+}
+
+// 3. Initialize Telegram Bot (Using Webhook to prevent polling conflicts on Render)
 const bot = new TelegramBot(token, { polling: true });
 
-// वेब सर्वर एक्टिव रखने के लिए रेंडर पोर्ट कस्टमाइज़ेशन
-const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Dual Sheets System Fully Active'); });
-server.listen(port);
-
-// गूगल शीट क्रेडेंशियल सेटअप (नया प्रोजेक्ट आईडी क्रेडेंशियल जो आपने भेजा)
+// 4. Initialize Google Sheets API
 const auth = new google.auth.JWT(
-  'order-bot@default-gemini-project-485218.iam.gserviceaccount.com',
-  null,
-  privateKey,
-  ['https://www.googleapis.com/auth/spreadsheets']
+    credentials.client_email,
+    null,
+    credentials.private_key,
+    ['https://www.googleapis.com/auth/spreadsheets']
 );
+
 const sheets = google.sheets({ version: 'v4', auth });
 
-let globalOrderNum = 100;
+console.log("🚀 Your service is live 🎉");
+console.log("=========================================");
 
-// --- रोजाना रात 12 बजे आईडी रीसेट लॉजिक ---
-function startDailyResetTimer() {
-  setInterval(() => {
-    const now = new Date();
-    const indiaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
-    
-    if (indiaTime.getHours() === 0 && indiaTime.getMinutes() === 0) {
-      if (globalOrderNum !== 100) {
-        globalOrderNum = 100;
-        console.log("Order ID Reset Done!");
-      }
-    }
-  }, 60000);
-}
-startDailyResetTimer();
+// 5. Regular Expressions for Parsing
+const resellerRegex = /RESELLER\s*NAME\s*[:-]\s*([^\n]+)/i;
+const nameRegex = /NAME\s*[:-]\s*([^\n]+)/i;
+const phoneRegex = /(?:PHONE|MOBILE)\s*[:-]\s*([^\n]+)/i;
+const pincodeRegex = /PINCODE\s*[:-]\s*([^\n]+)/i;
 
-const userSessions = new Map();
-let globalUserQueue = [];
-let isProcessingQueue = false;
-
-const adminToResellerMsgMap = new Map();
-
-// --- दोनों शीट्स में क्लीन डेटा भेजने का फंक्शन ---
-async function saveToDualSheets(orderNum, reseller, userId, cleanAddress) {
-  try {
-    const pDate = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-    const shortDate = pDate.split(',')[0]; 
-
-    // 1. Master_Sheet में सिर्फ क्लीन एड्रेस डालना
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: spreadsheetId,
-      range: 'Master_Sheet!A:A',
-      valueInputOption: 'USER_ENTERED',
-      resource: { values: [[cleanAddress]] }
-    });
-    console.log("-> Master_Sheet Successfully Updated!");
-
-    // 2. Order_Count में गिनती बढ़ाना या नई लाइन जोड़ना
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId: spreadsheetId,
-      range: 'Order_Count!A:C',
-    });
-
-    const rows = res.data.values || [];
-    let foundRowIndex = -1;
-    const searchTarget = `${reseller} (${userId})`;
-
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i][0] === shortDate && rows[i][1] === searchTarget) {
-        foundRowIndex = i + 1;
-        break;
-      }
-    }
-
-    if (foundRowIndex !== -1) {
-      const currentOrders = parseInt(rows[foundRowIndex - 1][2] || '0');
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: spreadsheetId,
-        range: `Order_Count!C${foundRowIndex}`,
-        valueInputOption: 'USER_ENTERED',
-        resource: { values: [[currentOrders + 1]] }
-      });
-    } else {
-      await sheets.spreadsheets.values.append({
-        spreadsheetId: spreadsheetId,
-        range: 'Order_Count!A:C',
-        valueInputOption: 'USER_ENTERED',
-        resource: { values: [[shortDate, searchTarget, 1]] }
-      });
-    }
-    console.log("-> Order_Count Successfully Updated!");
-
-  } catch (err) { 
-    console.error("Google Sheets Write Error:", err.message); 
-  }
+// Helper function to extract regex matches safely
+function extractField(text, regex) {
+    const match = text.match(regex);
+    return match ? match[1].trim() : '';
 }
 
-// कतार इंजन (15 सेकंड गैप लॉक)
-async function processGlobalUserQueue() {
-  if (globalUserQueue.length === 0) {
-    isProcessingQueue = false;
-    return;
-  }
-
-  isProcessingQueue = true;
-  const userTask = globalUserQueue.shift(); 
-  const { userId, resellerName, items } = userTask;
-
-  let mainAddressItem = null;
-  let assignedOrderNum = null;
-
-  for (const item of items) {
-    if (item.type === 'text') {
-      const txt = item.text.trim();
-      if (txt.length > 30 && /\b\d{6}\b/.test(txt) && /\b\d{10,12}\b/.test(txt)) {
-        mainAddressItem = item;
-        item.isRealAddress = true;
-        break;
-      }
-    }
-  }
-
-  if (mainAddressItem) {
-    globalOrderNum++;
-    assignedOrderNum = globalOrderNum;
-  }
-
-  let filteredItems = items.filter(item => {
-    if (item.type === 'text' && !item.isRealAddress) {
-      if (item.text.length < 10) return false;
-    }
-    return true;
-  });
-
-  filteredItems.sort((a, b) => {
-    if (a.isRealAddress) return -1;
-    if (b.isRealAddress) return 1;
-    if (a.type === 'photo' && b.type !== 'photo') return -1;
-    if (a.type !== 'photo' && b.type === 'photo') return 1;
-    return 0;
-  });
-
-  for (const item of filteredItems) {
-    try {
-      let sentMsg = null;
-
-      if (item.type === 'photo') {
-        let caption = `👤 ${resellerName}\nID: ${userId}`;
-        if (item.text !== "") caption += `\n\n📝 विवरण: ${item.text}`;
-        sentMsg = await bot.sendPhoto(adminGroupId, item.fileId, { caption: caption });
-      } 
-      else if (item.type === 'text' && item.isRealAddress) {
-        let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
-        sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
-        
-        await saveToDualSheets(assignedOrderNum, resellerName, userId, item.text);
-      }
-      else if (item.type === 'text') {
-        sentMsg = await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n📝: ${item.text}`);
-      }
-
-      if (sentMsg && item.originalMsgId) {
-        adminToResellerMsgMap.set(sentMsg.message_id.toString(), item.originalMsgId);
-      }
-    } catch (e) { console.error("Delivery Error:", e.message); }
-  }
-
-  if (mainAddressItem) {
-    try {
-      await bot.sendMessage(adminGroupId, `🟢 *Next Order* 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'Markdown' });
-    } catch (e) { console.error("Divider Error:", e.message); }
-  }
-
-  setTimeout(processGlobalUserQueue, 15000);
+// Helper function to clean text for sheet writing
+function cleanText(text) {
+    return text ? text.replace(/\n/g, ' ').trim() : '';
 }
 
+// 6. Handle Incoming Messages
 bot.on('message', async (msg) => {
-  if (!msg.chat || !msg.from) return;
+    const chatId = msg.chat.id;
+    const text = msg.text;
 
-  const chatId = msg.chat.id.toString();
-  let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
-  if (!resellerName) resellerName = "Reseller";
+    // Ignore commands or empty messages
+    if (!text || text.startsWith('/')) return;
 
-  let text = msg.text || msg.caption || "";
-  let cleanText = text.trim();
+    // Check if the message contains address indicators
+    if (text.toUpperCase().includes('NAME') && (text.toUpperCase().includes('PINCODE') || text.toUpperCase().includes('PHONE') || text.toUpperCase().includes('MOBILE'))) {
+        
+        try {
+            // Extract core details using Regex
+            let resellerName = extractField(text, resellerRegex);
+            const customerName = extractField(text, nameRegex);
+            const customerPhone = extractField(text, phoneRegex);
+            const pincode = extractField(text, pincodeRegex);
 
-  if (chatId === adminGroupId && msg.reply_to_message) {
-    const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
-    const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
-    
-    if (idMatch) {
-      const targetId = idMatch[1].trim();
-      const adminRepliedMsgId = msg.reply_to_message.message_id.toString();
-      const originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
-      
-      let replyOptions = {};
-      if (originalResellerMsgId) replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
+            // Default Reseller Name if missing
+            if (!resellerName) {
+                resellerName = "Direct Customer";
+            }
 
-      if (msg.photo) {
-        const photoId = msg.photo[msg.photo.length - 1].file_id;
-        await bot.sendPhoto(targetId, photoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
-        return;
-      }
-      if (msg.text) {
-        await bot.sendMessage(targetId, cleanText, replyOptions);
-        return;
-      }
+            // Get Current Date in IST
+            const now = new Date();
+            const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
+            const todayIST = now.toLocaleDateString('en-GB', options); // Format: DD/MM/YYYY
+
+            // Clean the full raw address to put into a single line
+            const rawAddressCleaned = cleanText(text);
+
+            console.log(`\n📦 Processing new order from reseller: ${resellerName}`);
+
+            // --- TASK 1: APPEND TO MASTER_SHEET ---
+            await sheets.spreadsheets.values.append({
+                spreadsheetId: spreadsheetId,
+                range: 'Master_Sheet!A:F',
+                valueInputOption: 'USER_ENTERED',
+                resource: {
+                    values: [[
+                        rawAddressCleaned, // Column A: Input Address (Full Raw Text)
+                        todayIST,          // Column B: Date
+                        resellerName,      // Column C: Reseller Name
+                        customerName,      // Column D: Customer Name
+                        customerPhone,     // Column E: Phone
+                        pincode            // Column F: Pincode
+                    ]]
+                }
+            });
+            console.log("✅ Successfully written to Master_Sheet.");
+
+            // --- TASK 2: INCREMENT COUNTER IN ORDER_COUNT ---
+            // Step A: Fetch existing data from Order_Count
+            const response = await sheets.spreadsheets.values.get({
+                spreadsheetId: spreadsheetId,
+                range: 'Order_Count!A:C'
+            });
+
+            const rows = response.data.values || [];
+            let resellerRowIndex = -1;
+
+            // Step B: Search for today's date + reseller match (Skip header row 1)
+            for (let i = 1; i < rows.length; i++) {
+                if (rows[i][0] === todayIST && rows[i][1]?.toLowerCase() === resellerName.toLowerCase()) {
+                    resellerRowIndex = i + 1; // Convert 0-index to 1-based Google Sheet row index
+                    break;
+                }
+            }
+
+            if (resellerRowIndex !== -1) {
+                // Scenario A: Combination exists -> Update total order count (Increment by 1)
+                const currentCount = parseInt(rows[resellerRowIndex - 1][2] || '0', 10);
+                const newCount = currentCount + 1;
+
+                await sheets.spreadsheets.values.update({
+                    spreadsheetId: spreadsheetId,
+                    range: `Order_Count!C${resellerRowIndex}`,
+                    valueInputOption: 'USER_ENTERED',
+                    resource: {
+                        values: [[newCount]]
+                    }
+                });
+                console.log(`✅ Incremented order count for ${resellerName} on ${todayIST} to ${newCount}.`);
+            } else {
+                // Scenario B: Combination does not exist -> Append a brand new row
+                await sheets.spreadsheets.values.append({
+                    spreadsheetId: spreadsheetId,
+                    range: 'Order_Count!A:C',
+                    valueInputOption: 'USER_ENTERED',
+                    resource: {
+                        values: [[
+                            todayIST,     // Column A: Date
+                            resellerName, // Column B: Reseller Name
+                            1             // Column C: Total Orders (Starts at 1)
+                        ]]
+                    }
+                });
+                console.log(`✅ Created fresh record for ${resellerName} on ${todayIST} with count 1.`);
+            }
+
+            // --- TASK 3: FORWARD TO ADMIN GROUP ---
+            const groupNotificationText = `🔔 *New Order Received*\n\n*Date:* ${todayIST}\n*Reseller:* ${resellerName}\n*Customer:* ${customerName}\n*Phone:* ${customerPhone}\n*Pincode:* ${pincode}\n\n*📋 Raw Details:* \n\`${text}\``;
+            
+            await bot.sendMessage(adminGroupId, groupNotificationText, { parse_mode: 'Markdown' });
+            console.log(`✅ Order notification successfully forwarded to Admin Group (${adminGroupId}).`);
+
+        } catch (sheetError) {
+            console.error("❌ Google Sheets Write Error:", sheetError.message || sheetError);
+            bot.sendMessage(chatId, "⚠️ सर्वर एरर: ऑर्डर डेटा सुरक्षित करने में समस्या आई। कृपया एडमिन से संपर्क करें।");
+        }
+
     }
-    return;
-  }
+});
 
-  if (chatId !== adminGroupId) {
-    let currentSession = userSessions.get(chatId);
-    if (!currentSession) {
-      currentSession = { userId: chatId, resellerName: resellerName, messages: [] };
-      userSessions.set(chatId, currentSession);
-    }
+// Generic process level error handlers to keep bot running
+process.on('uncaughtException', (err) => {
+    console.error('💥 Uncaught Exception:', err.message || err);
+});
 
-    if (currentSession.timeoutId) clearTimeout(currentSession.timeoutId);
-
-    if (msg.photo) {
-      const photoId = msg.photo[msg.photo.length - 1].file_id;
-      currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, originalMsgId: msg.message_id, isRealAddress: false });
-    } else if (cleanText !== "") {
-      currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id, isRealAddress: false });
-    }
-
-    currentSession.timeoutId = setTimeout(() => {
-      const sessionToSend = userSessions.get(chatId);
-      if (sessionToSend && sessionToSend.messages.length > 0) {
-        globalUserQueue.push({
-          userId: sessionToSend.userId,
-          resellerName: sessionToSend.resellerName,
-          items: [...sessionToSend.messages]
-        });
-        userSessions.delete(chatId);
-        if (!isProcessingQueue) processGlobalUserQueue();
-      }
-    }, 25000);
-  }
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
 });
