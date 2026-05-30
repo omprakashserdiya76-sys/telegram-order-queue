@@ -1,10 +1,8 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { google } = require('googleapis');
 const http = require('http');
 
 const token = process.env.BOT_TOKEN;
 const adminGroupId = process.env.ADMIN_GROUP_ID;
-const spreadsheetId = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
@@ -12,16 +10,6 @@ const bot = new TelegramBot(token, { polling: true });
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { res.end('Daily Reset System Active'); });
 server.listen(port);
-
-// गूगल शीट क्रेडेंशियल सेटअप
-const privateKey = `-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC6NfW9i6bV/E6j\n9T67Xf0gKmdH9mB6B+6eD1N2e4vYpCq0vJb4hXh6Hl7iK8x9wXn+Z1P9mC5v5mK8\n-----END PRIVATE KEY-----\n`;
-const auth = new google.auth.JWT(
-  'telegram-bot-service@mystic-vessel-421711.iam.gserviceaccount.com',
-  null,
-  privateKey.replace(/\\n/g, '\n'),
-  ['https://www.googleapis.com/auth/spreadsheets']
-);
-const sheets = google.sheets({ version: 'v4', auth });
 
 let globalOrderNum = 100;
 
@@ -49,19 +37,7 @@ let isProcessingQueue = false;
 
 const adminToResellerMsgMap = new Map();
 
-async function saveToSheet(orderNum, reseller, userId, address) {
-  try {
-    const pDate = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: spreadsheetId,
-      range: 'Sheet1!A:E',
-      valueInputOption: 'USER_ENTERED',
-      resource: { values: [[pDate, `#ORD${orderNum}`, reseller, userId, address]] }
-    });
-  } catch (err) { console.error("Sheet Error:", err.message); }
-}
-
-// कतार इंजन (15 सेकंड का लॉक)
+// कतार इंजन (15 सेकंड का锁)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -123,7 +99,6 @@ async function processGlobalUserQueue() {
       else if (item.type === 'text' && item.isRealAddress) {
         let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
         sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
-        await saveToSheet(assignedOrderNum, resellerName, userId, item.text);
       }
       else if (item.type === 'text') {
         sentMsg = await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n📝: ${item.text}`);
@@ -185,7 +160,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- कतार कलेक्शन (25 सेकंड का होल्ड) ---
+  // --- कतार कलेक्ट करना (25 सेकंड का होल्ड) ---
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
 
