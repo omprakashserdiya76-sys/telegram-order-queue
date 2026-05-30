@@ -17,7 +17,7 @@ const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { res.end('Dual Sheets System Fully Active'); });
 server.listen(port);
 
-// गूगल शीट क्रेडेंशियल सेटअप (नया प्रोजेक्ट आईडी क्रेडेंशियल)
+// गूगल शीट क्रेडेंशियल सेटअप (नया प्रोजेक्ट आईडी क्रेडेंशियल जो आपने भेजा)
 const auth = new google.auth.JWT(
   'order-bot@default-gemini-project-485218.iam.gserviceaccount.com',
   null,
