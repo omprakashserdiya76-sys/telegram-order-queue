@@ -8,9 +8,9 @@ const spreadsheetId = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर को एक्टिव रखने के लिए सर्वर
+// रेंडर वेब सर्वर
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Strict Sorting System Live'); });
+const server = http.createServer((req, res) => { res.end('Next Order Divider Live'); });
 server.listen(port);
 
 // गूगल शीट क्रेडेंशियल सेटअप
@@ -43,7 +43,7 @@ async function saveToSheet(orderNum, reseller, userId, address) {
   } catch (err) { console.error("Sheet Error:", err.message); }
 }
 
-// पैकेट्स को 15-15 सेकंड के अंतर पर एडमीन ग्रुप में भेजने वाला इंजन
+// कतार इंजन (15 सेकंड का लॉक)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -54,80 +54,82 @@ async function processGlobalUserQueue() {
   const userTask = globalUserQueue.shift(); 
   const { userId, resellerName, items } = userTask;
 
-  // यह चेक करने के लिए कि इस पूरे पैकेट में असली एड्रेस कौनसा है
   let mainAddressItem = null;
   let assignedOrderNum = null;
 
-  // सभी आइटम्स को चेक करें और असली बड़े एड्रेस की पहचान करें
+  // 1. पैकेट में से असली बड़े एड्रेस की पहचान
   for (const item of items) {
     if (item.type === 'text') {
       const txt = item.text.trim();
-      const isLongEnough = txt.length > 30;
-      const hasPin = /\b\d{6}\b/.test(txt);
-      const hasPhone = /\b\d{10,12}\b/.test(txt);
-      
-      if (isLongEnough && hasPin && hasPhone) {
+      if (txt.length > 30 && /\b\d{6}\b/.test(txt) && /\b\d{10,12}\b/.test(txt)) {
         mainAddressItem = item;
-        item.isRealAddress = true; // इसे असली एड्रेस मार्क कर दें
+        item.isRealAddress = true;
         break;
       }
     }
   }
 
-  // अगर असली एड्रेस मिल गया है, तो ही नया ऑर्डर नंबर जनरेट करें
   if (mainAddressItem) {
     globalOrderNum++;
     assignedOrderNum = globalOrderNum;
   }
 
-  // --- सख्त नियम: लाइन वाइज सॉर्टिंग (1. एड्रेस, 2. फोटो, 3. स्टिकर) ---
-  items.sort((a, b) => {
-    // क) असली एड्रेस हमेशा सबसे पहले (नंबर 1 पर) आएगा
+  // 2. सख्त नियम के तहत सॉर्टिंग (नंबर 1: एड्रेस, नंबर 2: फोटो)
+  // छोटे स्टिकर्स/इमोजी को हम इस लिस्ट से ही हटा देंगे ताकि वे फालतू प्रिंट न हों
+  let filteredItems = items.filter(item => {
+    if (item.type === 'text' && !item.isRealAddress) {
+      // अगर टेक्स्ट बहुत छोटा है (जैसे स्टिकर/इमोजी ❤️, 👍), तो उसे डिलीट करें
+      if (item.text.length < 10) return false;
+    }
+    return true;
+  });
+
+  filteredItems.sort((a, b) => {
     if (a.isRealAddress) return -1;
     if (b.isRealAddress) return 1;
-
-    // ख) फोटो हमेशा दूसरे नंबर पर आएगी
     if (a.type === 'photo' && b.type !== 'photo') return -1;
     if (a.type !== 'photo' && b.type === 'photo') return 1;
-
-    // ग) छोटे मैसेज या स्टिकर हमेशा सबसे आखिर में जाएंगे
     return 0;
   });
 
-  // अब बिना किसी गैप के लाइन से मैसेज ग्रुप में भेजना शुरू करें
-  for (const item of items) {
+  // 3. मैसेजेस को लाइन वाइज ग्रुप में डिलीवर करना
+  for (const item of filteredItems) {
     try {
       let sentMsg = null;
 
       if (item.type === 'photo') {
-        // फोटो पर कोई ऑर्डर आईडी नहीं लगेगी
         let caption = `👤 ${resellerName}\nID: ${userId}`;
         if (item.text !== "") {
           caption += `\n\n📝 विवरण: ${item.text}`;
         }
         sentMsg = await bot.sendPhoto(adminGroupId, item.fileId, { caption: caption });
       } 
+      else if (item.type === 'text' && item.isRealAddress) {
+        let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
+        sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
+        await saveToSheet(assignedOrderNum, resellerName, userId, item.text);
+      }
       else if (item.type === 'text') {
-        if (item.isRealAddress) {
-          // ऑर्डर आईडी केवल और केवल मुख्य एड्रेस पर ही लगेगी
-          let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
-          sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
-          await saveToSheet(assignedOrderNum, resellerName, userId, item.text);
-        } else {
-          // स्टिकर, इमोजी या छोटे मैसेज पर कोई आईडी नहीं लगेगी, यह बिना आईडी के जाएगा
-          sentMsg = await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n💬: ${item.text}`);
-        }
+        // अगर कोई अन्य बड़ा टेक्स्ट विवरण है
+        sentMsg = await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n📝: ${item.text}`);
       }
 
       if (sentMsg && item.originalMsgId) {
         adminToResellerMsgMap.set(sentMsg.message_id.toString(), item.originalMsgId);
       }
     } catch (e) {
-      console.error("Group Delivery Error:", e.message);
+      console.error("Delivery Error:", e.message);
     }
   }
 
-  // अगले रिसेलर का पैकेट ठीक 15 सेकंड के सख्त लॉक के बाद ही खुलेगा
+  // 4. ऑटोमेटिक "Next Order" का बड़ा डिवाइडर संदेश (हमेशा सबसे अंत में)
+  if (mainAddressItem) {
+    try {
+      await bot.sendMessage(adminGroupId, `🟢 *Next Order* 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'Markdown' });
+    } catch (e) { console.error("Divider Error:", e.message); }
+  }
+
+  // अगले रिसेलर के लिए 15 सेकंड का होल्ड
   setTimeout(processGlobalUserQueue, 15000);
 }
 
@@ -158,10 +160,7 @@ bot.on('message', async (msg) => {
 
       if (msg.photo) {
         const photoId = msg.photo[msg.photo.length - 1].file_id;
-        await bot.sendPhoto(targetId, photoId, { 
-          caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉",
-          ...replyOptions 
-        });
+        await bot.sendPhoto(targetId, photoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
         return;
       }
       if (msg.text) {
@@ -172,7 +171,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- नियम २: रिसेलर्स के इनपुट को कतार (Queue) में जमा करना ---
+  // --- नियम २: कतार कलेक्शन (25 सेकंड का होल्ड) ---
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
 
@@ -185,23 +184,11 @@ bot.on('message', async (msg) => {
 
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
-      currentSession.messages.push({ 
-        type: 'photo', 
-        fileId: photoId, 
-        text: cleanText,
-        originalMsgId: msg.message_id,
-        isRealAddress: false
-      });
+      currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, originalMsgId: msg.message_id, isRealAddress: false });
     } else if (cleanText !== "") {
-      currentSession.messages.push({ 
-        type: 'text', 
-        text: cleanText,
-        originalMsgId: msg.message_id,
-        isRealAddress: false
-      });
+      currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id, isRealAddress: false });
     }
 
-    // रिसेलर को पूरा 25 सेकंड का समय
     currentSession.timeoutId = setTimeout(() => {
       const sessionToSend = userSessions.get(chatId);
       if (sessionToSend && sessionToSend.messages.length > 0) {
