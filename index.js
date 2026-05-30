@@ -8,9 +8,9 @@ const spreadsheetId = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर को लाइव रखने के लिए सर्वर
+// रेंडर को एक्टिव रखने के लिए सिंपल वेब सर्वर
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('User Based Lock Active'); });
+const server = http.createServer((req, res) => { res.end('Perfect Double Queue Active'); });
 server.listen(port);
 
 // गूगल शीट क्रेडेंशियल सेटअप
@@ -25,7 +25,7 @@ const sheets = google.sheets({ version: 'v4', auth });
 
 let globalOrderNum = 100;
 
-// रिसेलर्स के मैसेजेस को मैनेज करने के लिए कतार सिस्टम
+// रिसेलर्स के पैकेट्स को मैनेज करने के लिए कतार
 const userSessions = new Map();
 let globalUserQueue = [];
 let isProcessingQueue = false;
@@ -42,7 +42,7 @@ async function saveToSheet(orderNum, reseller, userId, address) {
   } catch (err) { console.error("Sheet Error:", err.message); }
 }
 
-// पूरे यूजर का पैकेट एक साथ ग्रुप में भेजने वाला इंजन
+// पैकेट्स को 15-15 सेकंड के अंतर पर एडमीन ग्रुप में भेजने वाला इंजन
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -50,10 +50,10 @@ async function processGlobalUserQueue() {
   }
 
   isProcessingQueue = true;
-  const userTask = globalUserQueue.shift(); // कतार से अगले यूजर का पूरा पैकेट उठाएं
+  const userTask = globalUserQueue.shift(); // अगले यूजर का पैकेट निकालें
   const { userId, resellerName, items } = userTask;
 
-  // चेक करें कि इस पूरे पैकेट में कहीं कोई वैध एड्रेस है या नहीं
+  // चेक करें कि क्या यूजर ने इस पूरे पैकेट में कहीं वास्तविक एड्रेस भेजा है
   let combinedText = items.map(i => i.text).join("\n").trim();
   const isLongEnough = combinedText.length > 30;
   const hasPin = /\b\d{6}\b/.test(combinedText);
@@ -66,7 +66,7 @@ async function processGlobalUserQueue() {
     assignedOrderNum = globalOrderNum;
   }
 
-  // इस यूजर के जितने भी मैसेज/फोटो हैं, वे तुरंत बिना किसी गैप के एक साथ ग्रुप में जाएंगे
+  // इस यूजर का सारा सामान (एड्रेस + फोटो) बिना किसी गैप के तुरंत एक साथ ग्रुप में जाएगा
   for (const item of items) {
     try {
       if (item.type === 'photo') {
@@ -85,16 +85,16 @@ async function processGlobalUserQueue() {
           await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
           await saveToSheet(assignedOrderNum, resellerName, userId, item.text);
         } else {
-          // सामान्य मैसेज या स्टिकर टेक्स्ट (बिना ऑर्डर आईडी के)
+          // छोटे मैसेज या स्टिकर (बिना ऑर्डर आईडी के कम से कम शब्दों में)
           await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n💬: ${item.text}`);
         }
       }
     } catch (e) {
-      console.error("Sending Error:", e.message);
+      console.error("Group Delivery Error:", e.message);
     }
   }
 
-  // अगले यूजर (रिसेलर B) का नंबर ठीक 15 सेकंड के लॉक के बाद ही आएगा
+  // अगले रिसेलर का पैकेट ठीक 15 सेकंड के सख्त लॉक के बाद ही खुलेगा
   setTimeout(processGlobalUserQueue, 15000);
 }
 
@@ -128,17 +128,16 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- नियम २: रिसेलर्स के इनपुट को कतार (Queue) में डालना ---
+  // --- नियम २: रिसेलर्स के इनपुट को कतार (Queue) में जमा करना ---
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
 
-    // अगर इस यूजर का नया सेशन है, तो बनाएं
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], timeoutId: null };
       userSessions.set(chatId, currentSession);
     }
 
-    // रिसेलर जब तक फटाफट टाइप कर रहा या फोटो सेंड कर रहा है (2 सेकंड का छोटा होल्ड ताकि सारे मैसेज इकट्ठे हो जाएं)
+    // टाइमर रीसेट लॉजिक: रिसेलर जब तक फोटो ढूंढकर भेज रहा है, टाइमर आगे बढ़ता रहेगा (मैक्स 25 सेकंड का होल्ड)
     if (currentSession.timeoutId) clearTimeout(currentSession.timeoutId);
 
     if (msg.photo) {
@@ -148,7 +147,7 @@ bot.on('message', async (msg) => {
       currentSession.messages.push({ type: 'text', text: cleanText });
     }
 
-    // जैसे ही इस रिसेलर ने भेजना बंद किया, उसका पूरा पैकेट मेन ग्लोबल कतार में चला जाएगा
+    // रिसेलर को गैलरी से फोटो ढूंढने और भेजने के लिए पूरा 25 सेकंड (25000ms) का समय मिलेगा
     currentSession.timeoutId = setTimeout(() => {
       const sessionToSend = userSessions.get(chatId);
       if (sessionToSend && sessionToSend.messages.length > 0) {
@@ -157,13 +156,12 @@ bot.on('message', async (msg) => {
           resellerName: sessionToSend.resellerName,
           items: [...sessionToSend.messages]
         });
-        userSessions.delete(chatId); // इस यूजर का सेशन खाली करें
+        userSessions.delete(chatId); // इस यूजर की कतार लॉक करके खाली करें
 
-        // अगर कतार रुकी हुई है, तो इंजन चालू करें
         if (!isProcessingQueue) {
           processGlobalUserQueue();
         }
       }
-    }, 2000); // 2 सेकंड का बफर ताकि एक यूजर की फोटो और टेक्स्ट आपस में जुड़ सकें
+    }, 25000); // 25 सेकंड का पूरा मौका रिसेलर के लिए
   }
 });
