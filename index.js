@@ -6,19 +6,22 @@ const token = process.env.BOT_TOKEN;
 const adminGroupId = process.env.ADMIN_GROUP_ID;
 const spreadsheetId = process.env.SPREADSHEET_ID;
 
+// रेंडर के Environment Variables से नई चाबी उठाना
+const rawKey = process.env.GOOGLE_PRIVATE_KEY || "";
+const privateKey = rawKey.replace(/\\n/g, '\n');
+
 const bot = new TelegramBot(token, { polling: true });
 
-// वेब सर्वर एक्टिव रखने के लिए
+// वेब सर्वर एक्टिव रखने के लिए रेंडर पोर्ट कस्टमाइज़ेशन
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Dual Sheets Perfect System Active'); });
+const server = http.createServer((req, res) => { res.end('Dual Sheets System Fully Active'); });
 server.listen(port);
 
-// गूगल शीट क्रेडेंशियल सेटअप
-const privateKey = `-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC6NfW9i6bV/E6j\n9T67Xf0gKmdH9mB6B+6eD1N2e4vYpCq0vJb4hXh6Hl7iK8x9wXn+Z1P9mC5v5mK8\n-----END PRIVATE KEY-----\n`;
+// गूगल शीट क्रेडेंशियल सेटअप (नया प्रोजेक्ट आईडी क्रेडेंशियल)
 const auth = new google.auth.JWT(
-  'telegram-bot-service@mystic-vessel-421711.iam.gserviceaccount.com',
+  'order-bot@default-gemini-project-485218.iam.gserviceaccount.com',
   null,
-  privateKey.replace(/\\n/g, '\n'),
+  privateKey,
   ['https://www.googleapis.com/auth/spreadsheets']
 );
 const sheets = google.sheets({ version: 'v4', auth });
@@ -47,11 +50,11 @@ let isProcessingQueue = false;
 
 const adminToResellerMsgMap = new Map();
 
-// --- दोनों शीट्स में क्लीन डेटा भेजने का मजबूत फंक्शन ---
+// --- दोनों शीट्स में क्लीन डेटा भेजने का फंक्शन ---
 async function saveToDualSheets(orderNum, reseller, userId, cleanAddress) {
   try {
     const pDate = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-    const shortDate = pDate.split(',')[0]; // तारीख: MM/DD/YYYY
+    const shortDate = pDate.split(',')[0]; 
 
     // 1. Master_Sheet में सिर्फ क्लीन एड्रेस डालना
     await sheets.spreadsheets.values.append({
@@ -60,7 +63,7 @@ async function saveToDualSheets(orderNum, reseller, userId, cleanAddress) {
       valueInputOption: 'USER_ENTERED',
       resource: { values: [[cleanAddress]] }
     });
-    console.log("Master_Sheet Updated!");
+    console.log("-> Master_Sheet Successfully Updated!");
 
     // 2. Order_Count में गिनती बढ़ाना या नई लाइन जोड़ना
     const res = await sheets.spreadsheets.values.get({
@@ -95,10 +98,10 @@ async function saveToDualSheets(orderNum, reseller, userId, cleanAddress) {
         resource: { values: [[shortDate, searchTarget, 1]] }
       });
     }
-    console.log("Order_Count Updated!");
+    console.log("-> Order_Count Successfully Updated!");
 
   } catch (err) { 
-    console.error("Sheets Error Details:", err.message); 
+    console.error("Google Sheets Write Error:", err.message); 
   }
 }
 
@@ -160,7 +163,6 @@ async function processGlobalUserQueue() {
         let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
         sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
         
-        // बिना बोट डिटेल्स के सिर्फ क्लीन एड्रेस भेजना
         await saveToDualSheets(assignedOrderNum, resellerName, userId, item.text);
       }
       else if (item.type === 'text') {
@@ -192,7 +194,6 @@ bot.on('message', async (msg) => {
   let text = msg.text || msg.caption || "";
   let cleanText = text.trim();
 
-  // एडमिन रिप्लाई रूट सिस्टम
   if (chatId === adminGroupId && msg.reply_to_message) {
     const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
     const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -218,7 +219,6 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // कतार कलेक्शन (25 सेकंड होल्ड)
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
     if (!currentSession) {
