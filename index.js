@@ -1,8 +1,10 @@
 const TelegramBot = require('node-telegram-bot-api');
+const { google } = require('googleapis');
 const http = require('http');
 
 const token = process.env.BOT_TOKEN;
 const adminGroupId = process.env.ADMIN_GROUP_ID;
+const spreadsheetId = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
@@ -11,23 +13,34 @@ const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { res.end('Daily Reset System Active'); });
 server.listen(port);
 
-let globalOrderNum = 100;
+// गूगल शीट क्रेडेंशियल सेटअप
+const privateKey = `-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC6NfW9i6bV/E6j\n9T67Xf0gKmdH9mB6B+6eD1N2e4vYpCq0vJb4hXh6Hl7iK8x9wXn+Z1P9mC5v5mK8\n-----END PRIVATE KEY-----\n`;
+const auth = new google.auth.JWT(
+  'telegram-bot-service@mystic-vessel-421711.iam.gserviceaccount.com',
+  null,
+  privateKey.replace(/\\n/g, '\n'),
+  ['https://www.googleapis.com/auth/spreadsheets']
+);
+const sheets = google.sheets({ version: 'v4', auth });
 
-// --- रोजाना रात 12 बजे ऑर्डर आईडी रीसेट करने का लॉजिक ---
+// --- बदलाव: हर रीसेलर की अलग गिनती रखने के लिए मैप ---
+let resellerOrderCounts = new Map();
+
+// --- रोजाना रात 12 बजे प्रत्येक रीसेलर का ऑर्डर आईडी 1 पर रीसेट करने का लॉजिक ---
 function startDailyResetTimer() {
   setInterval(() => {
     const now = new Date();
-    // इंडिया टाइमज़ोन के हिसाब से घंटे और मिनट निकालें
+    // इंडिया टाइमज़ोन के हिसाब से घंटे और मिनट निकालना
     const indiaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     
-    // अगर रात के ठीक 12 बजकर 0 मिनट हुए हैं, तो आईडी रीसेट करें
+    // अगर रात के ठीक 12 बजकर 0 मिनट हुए हैं, तो सभी की गिनती साफ करके 1 से शुरू करें
     if (indiaTime.getHours() === 0 && indiaTime.getMinutes() === 0) {
-      if (globalOrderNum !== 100) {
-        globalOrderNum = 100;
-        console.log("Order ID successfully reset to 100 for the new day!");
+      if (resellerOrderCounts.size > 0) {
+        resellerOrderCounts.clear();
+        console.log("सभी रीसेलर्स के ऑर्डर नंबर सफलतापूर्वक रात 12 बजे रीसेट होकर 1 पर आ गए हैं!");
       }
     }
-  }, 60000); // हर एक मिनट में बैकग्राउंड में चेक करेगा (बिना किसी रुकावट के)
+  }, 60000); // हर एक मिनट में बैकग्राउंड में चेक करेगा
 }
 startDailyResetTimer();
 
@@ -37,7 +50,19 @@ let isProcessingQueue = false;
 
 const adminToResellerMsgMap = new Map();
 
-// कतार इंजन (15 सेकंड का锁)
+async function saveToSheet(orderNum, reseller, userId, address) {
+  try {
+    const pDate = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: spreadsheetId,
+      range: 'Sheet1!A:E',
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: [[pDate, orderNum, reseller, userId, address]] }
+    });
+  } catch (err) { console.error("Sheet Error:", err.message); }
+}
+
+// कतार इंजन (15 सेकंड का लॉक)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -49,7 +74,7 @@ async function processGlobalUserQueue() {
   const { userId, resellerName, items } = userTask;
 
   let mainAddressItem = null;
-  let assignedOrderNum = null;
+  let assignedOrderNumStr = null;
 
   // 1. असली एड्रेस की पहचान
   for (const item of items) {
@@ -64,8 +89,18 @@ async function processGlobalUserQueue() {
   }
 
   if (mainAddressItem) {
-    globalOrderNum++;
-    assignedOrderNum = globalOrderNum;
+    // --- बदलाव: इस विशिष्ट रीसेलर के लिए नंबर बढ़ाना ---
+    let currentCount = resellerOrderCounts.get(userId) || 0;
+    currentCount++;
+    resellerOrderCounts.set(userId, currentCount);
+
+    // रीसेलर के नाम के पहले 3 अक्षर निकालना (जैसे स्वरूप के लिए SWA)
+    let prefix = resellerName.replace(/[^a-zA-Z0-9]/g, "").substring(0, 3).toUpperCase();
+    if (prefix.length < 3) prefix = "ORD";
+
+    // सुंदर फॉर्मेट तैयार करना (जैसे: SWA-001, SWA-002)
+    let paddedCount = currentCount.toString().padStart(3, '0');
+    assignedOrderNumStr = `${prefix}-${paddedCount}`;
   }
 
   // 2. छोटे स्टिकर्स/इमोजी को हटाना और सॉर्टिंग करना
@@ -97,8 +132,10 @@ async function processGlobalUserQueue() {
         sentMsg = await bot.sendPhoto(adminGroupId, item.fileId, { caption: caption });
       } 
       else if (item.type === 'text' && item.isRealAddress) {
-        let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #ORD${assignedOrderNum}*\n\n${item.text}`;
+        // --- बदलाव: यहाँ नया कस्टमाइज्ड ऑर्डर नंबर दिखेगा ---
+        let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #${assignedOrderNumStr}*\n\n${item.text}`;
         sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
+        await saveToSheet(assignedOrderNumStr, resellerName, userId, item.text);
       }
       else if (item.type === 'text') {
         sentMsg = await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n📝: ${item.text}`);
@@ -160,7 +197,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- कतार कलेक्ट करना (25 सेकंड का होल्ड) ---
+  // --- कतार कूट व्यवस्था (25 सेकंड का होल्ड) ---
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
 
