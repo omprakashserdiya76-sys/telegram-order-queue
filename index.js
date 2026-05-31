@@ -14,7 +14,7 @@ server.listen(port);
 // हर रीसेलर की अलग गिनती रखने के लिए मैप (यूजर आईडी के आधार पर)
 let resellerOrderCounts = new Map();
 
-// --- रोजाना रात 12 बजे प्रत्येक रीसेलर का ऑर्डर आईडी 1 पर रीसेट करने का लॉजिक ---
+// --- रोजाना रात 12 बजे प्रत्येक रीсеलर का ऑर्डर आईडी 1 पर रीसेट करने का लॉजिक ---
 function startDailyResetTimer() {
   setInterval(() => {
     const now = new Date();
@@ -65,16 +65,23 @@ async function processGlobalUserQueue() {
   }
 
   if (mainAddressItem) {
-    // यूजर आईडी (userId) के आधार पर इस विशिष्ट रीसेलर के लिए नंबर बढ़ाना
+    // यूजर आईडी के आधार पर गिनती बढ़ाना
     let currentCount = resellerOrderCounts.get(userId) || 0;
     currentCount++;
     resellerOrderCounts.set(userId, currentCount);
 
-    // रीसेलर के नाम के पहले 3 अक्षर निकालना (जैसे स्वरूप के लिए SWA)
-    let prefix = resellerName.replace(/[^a-zA-Z0-9]/g, "").substring(0, 3).toUpperCase();
-    if (prefix.length < 3) prefix = "ORD";
+    // नया नियम: रीसेलर नाम के शुरुआती 2 अक्षर
+    let cleanName = resellerName.replace(/[^a-zA-Z0-9]/g, "");
+    let namePart = cleanName.substring(0, 2).toUpperCase();
+    if (namePart.length < 2) namePart = "OR";
 
-    // सुंदर फॉर्मेट तैयार करना (जैसे: SWA-001, SWA-002)
+    // नया नियम: रीसेलर यूज़र आईडी (ID) का आख़िरी 1 अक्षर/नंबर
+    let idStr = userId.toString();
+    let idPart = idStr.substring(idStr.length - 1);
+
+    // सुंदर यूनिक कोड तैयार (जैसे: OM2, OM0)
+    let prefix = `${namePart}${idPart}`;
+
     let paddedCount = currentCount.toString().padStart(3, '0');
     assignedOrderNumStr = `${prefix}-${paddedCount}`;
   }
@@ -131,6 +138,7 @@ async function processGlobalUserQueue() {
     } catch (e) { console.error("Divider Error:", e.message); }
   }
 
+  // 15 सेकंड का लॉक इंजन
   setTimeout(processGlobalUserQueue, 15000);
 }
 
@@ -190,6 +198,7 @@ bot.on('message', async (msg) => {
       currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id, isRealAddress: false });
     }
 
+    // 25 सेकंड का टाइमर जो बंडल बनाता है
     currentSession.timeoutId = setTimeout(() => {
       const sessionToSend = userSessions.get(chatId);
       if (sessionToSend && sessionToSend.messages.length > 0) {
