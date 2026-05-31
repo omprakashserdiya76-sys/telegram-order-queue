@@ -1,29 +1,17 @@
 const TelegramBot = require('node-telegram-bot-api');
-const { google } = require('googleapis');
 const http = require('http');
 
 const token = process.env.BOT_TOKEN;
 const adminGroupId = process.env.ADMIN_GROUP_ID;
-const spreadsheetId = process.env.SPREADSHEET_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर वेब सर्वर
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Daily Reset System Active'); });
+const server = http.createServer((req, res) => { res.end('Daily Reset System Active (No Sheet Mode)'); });
 server.listen(port);
 
-// गूगल शीट क्रेडेंशियल सेटअप
-const privateKey = `-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC6NfW9i6bV/E6j\n9T67Xf0gKmdH9mB6B+6eD1N2e4vYpCq0vJb4hXh6Hl7iK8x9wXn+Z1P9mC5v5mK8\n-----END PRIVATE KEY-----\n`;
-const auth = new google.auth.JWT(
-  'telegram-bot-service@mystic-vessel-421711.iam.gserviceaccount.com',
-  null,
-  privateKey.replace(/\\n/g, '\n'),
-  ['https://www.googleapis.com/auth/spreadsheets']
-);
-const sheets = google.sheets({ version: 'v4', auth });
-
-// --- बदलाव: हर रीसेलर की अलग गिनती रखने के लिए मैप ---
+// हर रीसेलर की अलग गिनती रखने के लिए मैप (यूजर आईडी के आधार पर)
 let resellerOrderCounts = new Map();
 
 // --- रोजाना रात 12 बजे प्रत्येक रीसेलर का ऑर्डर आईडी 1 पर रीसेट करने का लॉजिक ---
@@ -49,18 +37,6 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 
 const adminToResellerMsgMap = new Map();
-
-async function saveToSheet(orderNum, reseller, userId, address) {
-  try {
-    const pDate = new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-    await sheets.spreadsheets.values.append({
-      spreadsheetId: spreadsheetId,
-      range: 'Sheet1!A:E',
-      valueInputOption: 'USER_ENTERED',
-      resource: { values: [[pDate, orderNum, reseller, userId, address]] }
-    });
-  } catch (err) { console.error("Sheet Error:", err.message); }
-}
 
 // कतार इंजन (15 सेकंड का लॉक)
 async function processGlobalUserQueue() {
@@ -89,7 +65,7 @@ async function processGlobalUserQueue() {
   }
 
   if (mainAddressItem) {
-    // --- बदलाव: इस विशिष्ट रीसेलर के लिए नंबर बढ़ाना ---
+    // यूजर आईडी (userId) के आधार पर इस विशिष्ट रीसेलर के लिए नंबर बढ़ाना
     let currentCount = resellerOrderCounts.get(userId) || 0;
     currentCount++;
     resellerOrderCounts.set(userId, currentCount);
@@ -132,10 +108,9 @@ async function processGlobalUserQueue() {
         sentMsg = await bot.sendPhoto(adminGroupId, item.fileId, { caption: caption });
       } 
       else if (item.type === 'text' && item.isRealAddress) {
-        // --- बदलाव: यहाँ नया कस्टमाइज्ड ऑर्डर नंबर दिखेगा ---
+        // यहाँ नया कस्टमाइज्ड ऑर्डर नंबर साफ-साफ दिखेगा
         let orderHeader = `👤 ${resellerName}\nID: ${userId}\n\n📦 *NEW ORDER #${assignedOrderNumStr}*\n\n${item.text}`;
         sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'Markdown' });
-        await saveToSheet(assignedOrderNumStr, resellerName, userId, item.text);
       }
       else if (item.type === 'text') {
         sentMsg = await bot.sendMessage(adminGroupId, `👤 ${resellerName}\nID: ${userId}\n📝: ${item.text}`);
@@ -197,7 +172,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- कतार कूट व्यवस्था (25 सेकंड का होल्ड) ---
+  // --- कतार कलेक्शन (25 सेकंड का होल्ड) ---
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
 
