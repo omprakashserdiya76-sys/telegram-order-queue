@@ -8,25 +8,59 @@ const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर वेब सर्वर
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Daily Reset System Active (No Sheet Mode)'); });
+const server = http.createServer((req, res) => { res.end('Daily Reset System Active (Summary Mode)'); });
 server.listen(port);
 
-// हर रीसेलर की अलग गिनती रखने के लिए मैप (यूजर आईडी के आधार पर)
-let resellerOrderCounts = new Map();
+// हर रीसेलर की अलग गिनती और नाम का रिकॉर्ड रखने के लिए मैप
+let resellerOrderCounts = new Map(); 
+let resellerNamesMap = new Map(); 
 
-// --- रोजाना रात 12 बजे प्रत्येक रीसेलर का ऑर्डर आईडी 1 पर रीसेट करने का लॉजिक ---
+// --- रोजाना रात 12 बजे रीसेलर्स को मैसेज भेजने, ग्रुप में रिपोर्ट देने और रीसेट करने का लॉजिक ---
 function startDailyResetTimer() {
-  setInterval(() => {
+  setInterval(async () => {
     const now = new Date();
     const indiaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
     
+    // यदि रात के ठीक 12:00 बजे हैं
     if (indiaTime.getHours() === 0 && indiaTime.getMinutes() === 0) {
       if (resellerOrderCounts.size > 0) {
+        
+        let reportText = `📊 *Daily Orders Report (रात 12:00 बजे)* 📊\n`;
+        reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
+        
+        // एक-एक करके सभी रीसेलर्स को प्रोसेस करना
+        for (const [userId, count] of resellerOrderCounts.entries()) {
+          const rName = resellerNamesMap.get(userId) || "Reseller";
+          
+          // 1. रीसेलर को पर्सनल टेलीग्राम मैसेज भेजना
+          try {
+            const personalMsg = `नमस्कार! आज आपके कुल *${count}* ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं। हमारे साथ काम करने के लिए धन्यवाद! 🙏`;
+            await bot.sendMessage(userId, personalMsg, { parse_mode: 'Markdown' });
+          } catch (err) {
+            console.error(`रीसेलर ${userId} को मैसेज भेजने में त्रुटि:`, err.message);
+          }
+          
+          // रिपोर्ट की लाइन तैयार करना
+          reportText += `👤 ${rName} (ID: ${userId}) — कुल ऑर्डर: *${count}*\n`;
+        }
+        
+        reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
+        reportText += `✅ सभी रीसेलर्स को समरी भेज दी गई है और काउंट 1 पर रीसेट कर दिया गया है!`;
+        
+        // 2. एडमिन ग्रुप में आपको फाइनल रिपोर्ट शो करना
+        try {
+          await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'Markdown' });
+        } catch (err) {
+          console.error("एडमिन ग्रुप में रिपोर्ट भेजने में त्रुटि:", err.message);
+        }
+        
+        // 3. डेटा साफ करके काउंट 1 पर रीसेट करना
         resellerOrderCounts.clear();
-        console.log("सभी रीसेलर्स के ऑर्डर नंबर सफलतापूर्वक रात 12 बजे रीसेट होकर 1 पर आ गए हैं!");
+        resellerNamesMap.clear();
+        console.log("सभी काउंट सफलतापूर्वक रीसेट कर दिए गए हैं।");
       }
     }
-  }, 60000); 
+  }, 60000); // हर मिनट चेक करेगा
 }
 startDailyResetTimer();
 
@@ -36,7 +70,7 @@ let isProcessingQueue = false;
 
 const adminToResellerMsgMap = new Map();
 
-// कतार इंजन (15 सेकंड का锁)
+// कतार इंजन (15 सेकंड का लॉक)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -50,22 +84,17 @@ async function processGlobalUserQueue() {
   let mainAddressItem = null;
   let assignedOrderNumStr = null;
 
-  // 1. असली एड्रेस की महा-समझदार पहचान (अपग्रेडेड लॉजिक)
+  // 1. असली एड्रेस की सबसे समझदार पहचान
   for (const item of items) {
     if (item.type === 'text') {
       const txt = item.text.trim();
       
-      // टेक्स्ट में से सारे स्पेस, डैश, कोष्ठक हटाकर केवल शुद्ध अंक (Digits) निकालना
       const digitsOnly = txt.replace(/\D/g, ""); 
-      
-      // क्या शुद्ध अंकों में कहीं भी लगातार 10, 11 या 12 अंकों का मोबाइल नंबर छिपा है?
       const hasValidPhone = /\d{10,12}/.test(digitsOnly);
-      
-      // क्या टेक्स्ट में 6 अंकों का पिनकोड मौजूद है?
       const hasPinCode = /\b\d{6}\b/.test(txt);
 
-      // अगर कुल लिखावट 30 अक्षर से बड़ी है, पिनकोड है और कैसा भी मोबाइल नंबर है
-      if (txt.length > 30 && hasPinCode && hasValidPhone) {
+      // नियम: लिखावट 30 अक्षर से बड़ी हो, और (मोबाइल नंबर या पिनकोड में से कोई भी एक हो)
+      if (txt.length > 30 && (hasValidPhone || hasPinCode)) {
         mainAddressItem = item;
         item.isRealAddress = true;
         break;
@@ -74,6 +103,9 @@ async function processGlobalUserQueue() {
   }
 
   if (mainAddressItem) {
+    // रिकॉर्ड सुरक्षित रखना रात 12 बजे की रिपोर्ट के लिए
+    resellerNamesMap.set(userId, resellerName);
+
     let currentCount = resellerOrderCounts.get(userId) || 0;
     currentCount++;
     resellerOrderCounts.set(userId, currentCount);
@@ -90,6 +122,7 @@ async function processGlobalUserQueue() {
     assignedOrderNumStr = `${prefix}-${paddedCount}`;
   }
 
+  // 2. छोटे स्टिकर्स को हटाना और सॉर्टिंग करना
   let filteredItems = items.filter(item => {
     if (item.type === 'text' && !item.isRealAddress) {
       if (item.text.length < 10) return false;
@@ -105,6 +138,7 @@ async function processGlobalUserQueue() {
     return 0;
   });
 
+  // 3. ग्रुप में ऑर्डर डिलीवर करना
   for (const item of filteredItems) {
     try {
       let sentMsg = null;
@@ -138,6 +172,7 @@ async function processGlobalUserQueue() {
     } catch (e) { console.error("Divider Error:", e.message); }
   }
 
+  // 15 सेकंड का लॉक टाइमर
   setTimeout(processGlobalUserQueue, 15000);
 }
 
@@ -151,6 +186,7 @@ bot.on('message', async (msg) => {
   let text = msg.text || msg.caption || "";
   let cleanText = text.trim();
 
+  // --- एडमिन रिप्लाई रूट सिस्टम ---
   if (chatId === adminGroupId && msg.reply_to_message) {
     const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
     const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -178,6 +214,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
+  // --- कतार कलेक्शन (25 सेकंड का होल्ड) ---
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
 
@@ -195,6 +232,7 @@ bot.on('message', async (msg) => {
       currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id, isRealAddress: false });
     }
 
+    // 25 सेकंड का होल्ड टाइमर
     currentSession.timeoutId = setTimeout(() => {
       const sessionToSend = userSessions.get(chatId);
       if (sessionToSend && sessionToSend.messages.length > 0) {
