@@ -6,9 +6,9 @@ const adminGroupId = process.env.ADMIN_GROUP_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर वेब सर्वर स्टेबिलिटी के लिए
+// रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active - Absolute Fix Mode'); });
+const server = http.createServer((req, res) => { res.end('Engine Active - Strict Group Protection Mode'); });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
@@ -19,7 +19,7 @@ function escapeHTML(text) {
   return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// --- नियम 1: रोजाना रात 12 बजे ग्रुप में पूरी रिपोर्ट भेजना और पर्सनल मैसेज भेजना ---
+// --- नियम 1: रोजाना रात 12 बजे ग्रुप में पूरी रिपोर्ट और पर्सनल मैसेज भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -34,7 +34,7 @@ function startDailyResetTimer() {
         for (const [userId, count] of resellerOrderCounts.entries()) {
           const rName = resellerNamesMap.get(userId) || "Reseller";
           const safeName = escapeHTML(rName);
-          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल आदेश: <b>${count}</b>\n`;
+          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल ऑर्डर: <b>${count}</b>\n`;
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -70,14 +70,14 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- एड्रेस डिटेक्टर (स्पेस हटाना और 9-12 अंकों की रेंज) ---
+// --- एड्रेस डिटेक्टर (सटीक कमी पकड़ने वाला सिस्टम) ---
 function checkAddressDetails(txt) {
   if (!txt) return { isAddress: false, missing: 'both' };
   
   let cleanTxt = txt.toString().trim();
   if (cleanTxt.length < 20) return { isAddress: false, missing: 'both' };
 
-  // मोबाइल नंबर के बीच के स्पेस को हटाना ताकि बोट नंबर को एक साथ पढ़ सके
+  // मोबाइल नंबर के बीच के स्पेस को साफ करना
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
   const hasValidPhone = /\b\d{9,12}\b/.test(textForPhoneCheck);
@@ -94,7 +94,7 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both' };
 }
 
-// कतार इंजन (15 सेकंड लॉक - बंडल डिलीवरी)
+// कतार इंजन (15 सेकंड लॉक)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -273,33 +273,48 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- रीसेलर साइड कलेक्शन और तुरंत रिजेक्शन अलर्ट ---
+  // --- रीसेलर साइड फिल्टर और सख्त ग्रुप सुरक्षा ---
   if (chatId !== adminGroupId) {
     
-    // 💡 महा-सुधार: कतार (Session) में डालने से पहले ही अधूरे एड्रेस को तुरंत रिजेक्ट करना
+    // 💡 सबसे बड़ा ताला: कतार इंजन में एंट्री करने से पहले ही अधूरे एड्रेस की जांच करना
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
       
-      // अगर टेक्स्ट एड्रेस जैसा है (लंबाई 20 से ज्यादा) लेकिन पिनकोड या फोन गायब है
+      // अगर एड्रेस है (लंबाई 20 से ज्यादा) पर मोबाइल या पिनकोड गायब है
       if (!addrCheck.isAddress && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone' || addrCheck.missing === 'both')) {
         
-        let missingDetailHindi = "पिनकोड या मोबाइल नंबर";
-        if (addrCheck.missing === 'pincode') missingDetailHindi = "पिनकोड (Pincode)";
-        if (addrCheck.missing === 'phone') missingDetailHindi = "मोबाइल नंबर (Mobile Number)";
+        let dynamicReason = "";
+        if (addrCheck.missing === 'pincode') {
+          dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) मौजूद नहीं है!</b>`;
+        } else if (addrCheck.missing === 'phone') {
+          dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर (Mobile Number) मौजूद नहीं है!</b>`;
+        } else {
+          dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों मौजूद नहीं हैं!</b>`;
+        }
         
-        let alertMsg = `⚠️ <b>आपके एड्रेस में ${missingDetailHindi} गायब या सही नहीं है!</b>\n\n` +
-                       `यह आपका आदेश आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। यह मैसेज डिलीट कर दिया गया है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही आदेश स्वीकार किया जाएगा।\n\n` +
+        let alertMsg = `${dynamicReason}\n\n` +
+                       `यह आपका ऑर्डर आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
                        `🚨 <b>कृपया मोबाइल नंबर, पिनकोड और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
                        `━━━━━━━━━━━━━━━━━━━━\n` +
-                       `💡 <i>यदि आपको आदेश भेजने में कोई समस्या आ रही है या मदद की जरूरत है, तो आप मुझसे संपर्क कर सकते हैं:</i>\n\n` +
+                       `💡 <i>यदि आपको ऑर्डर भेजने में कोई समस्या आ रही है या मदद की जरूरत है, तो आप मुझसे संपर्क कर सकते हैं:</i>\n\n` +
                        `👤 <b>ओमप्रकाश</b>\n` +
                        `📞 <code>9376535752</code>\n` +
                        `💬 @Omprakash9950`;
 
         try {
-          await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: msg.message_id });
+          // रीसेलर को चेतावनी देकर अलर्ट भेजना (बिना रिप्लाई लिंक के, फ्रेश मीडिया मैसेज)
+          if (msg.photo) {
+            const photoId = msg.photo[msg.photo.length - 1].file_id;
+            await bot.sendPhoto(chatId, photoId, { caption: alertMsg, parse_mode: 'HTML' });
+          } else if (msg.video) {
+            const videoId = msg.video.file_id;
+            await bot.sendVideo(chatId, videoId, { caption: alertMsg, parse_mode: 'HTML' });
+          }
         } catch (e) { console.error("Alert Sender Failed:", e.message); }
-        return; // यहीं से पूरी तरह साफ, आगे कतार में नहीं जाएगा!
+        
+        // 🔥 महा-सुधार: यहाँ से सीधा 'return' कर रहे हैं। 
+        // इसका मतलब यह अधूरा मैसेज कतार (userSessions) में स्टोर नहीं होगा और न ही कभी आपके ग्रुप में जाएगा!
+        return; 
       }
     }
 
