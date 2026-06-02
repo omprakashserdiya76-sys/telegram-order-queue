@@ -8,7 +8,7 @@ const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर वेब सर्वर स्टेबिलिटी के लिए
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active - Pure Fixed Verification Mode'); });
+const server = http.createServer((req, res) => { res.end('Engine Active - Strict Product Photo Safe Mode'); });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
@@ -16,10 +16,10 @@ let resellerNamesMap = new Map();
 
 function escapeHTML(text) {
   if (!text) return "";
-  return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text.toString().replace(//g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// --- नियम 1: रोजाना रात 12 बजे ग्रुप में पूरी रिपोर्ट और पर्सनल मैसेज भेजना ---
+// --- रोजाना रात 12 बजे ग्रुप में पूरी रिपोर्ट और पर्सनल मैसेज भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -70,33 +70,39 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- एड्रेस डिटेक्टर (मोबाइल नंबर और पिनकोड की सटीक जांच प्रणाली) ---
+// --- ⚙️ महा-सुधार: मोबाइल नंबर और पिनकोड की 100% सटीक जांच प्रणाली ---
 function checkAddressDetails(txt) {
-  if (!txt) return { isAddress: false, missing: 'both' };
+  // अगर कोई टेक्स्ट लिखा ही नहीं है, तो यह एड्रेस नहीं है (यह सादी प्रोडक्ट की फोटो है)
+  if (!txt || txt.toString().trim() === "") {
+    return { isAddress: false, missing: 'none', isPlainMedia: true };
+  }
   
   let cleanTxt = txt.toString().trim();
   
-  // अगर कोई बहुत छोटा टेक्स्ट है तो उसे एड्रेस नहीं मानेंगे और उस पर कोई अलर्ट नहीं देंगे
-  if (cleanTxt.length < 15) return { isAddress: false, missing: 'none' };
+  // अगर लिखा गया टेक्स्ट 15 अक्षरों से छोटा है, तो भी इसे अधूरा एड्रेस नहीं बल्कि सादा विवरण मानेंगे
+  if (cleanTxt.length < 15) {
+    return { isAddress: false, missing: 'none', isPlainMedia: true };
+  }
 
   // मोबाइल नंबर के बीच के स्पेस को साफ़ करना (जैसे: 93515 20621 को एक करना)
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
-  // भारतीय मोबाइल नंबर (9 से 12 अंक) की सटीक जांच
+  // भारतीय मोबाइल नंबर (10 से 12 अंक) की सटीक जांच
   const hasValidPhone = /(?:(?:\+|0{0,2})91[\s-]*)?[6-9]\d{9}\b|\b\d{10,12}\b/.test(textForPhoneCheck);
   
   // पिनकोड (5 से 7 अंक) की सटीक जांच
   const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);
 
+  // अगर दोनों मौजूद हैं, तो यह 100% सही एड्रेस है
   if (hasValidPhone && hasPinCode) {
-    return { isAddress: true, missing: 'none' };
+    return { isAddress: true, missing: 'none', isPlainMedia: false };
   } else if (hasValidPhone && !hasPinCode) {
-    return { isAddress: false, missing: 'pincode' };
+    return { isAddress: false, missing: 'pincode', isPlainMedia: false };
   } else if (!hasValidPhone && hasPinCode) {
-    return { isAddress: false, missing: 'phone' };
+    return { isAddress: false, missing: 'phone', isPlainMedia: false };
   }
   
-  return { isAddress: false, missing: 'both' };
+  return { isAddress: false, missing: 'both', isPlainMedia: false };
 }
 
 // कतार इंजन (15 सेकंड लॉक - बंडल डिलीवरी)
@@ -284,9 +290,8 @@ bot.on('message', async (msg) => {
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
       
-      // 💡 महा-सुधार: अलर्ट सिर्फ और सिर्फ तभी जाएगा जब एड्रेस गलत (isAddress: false) होगा 
-      // और पिनकोड या मोबाइल नंबर वाकई में गायब होगा!
-      if (addrCheck.isAddress === false && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone' || addrCheck.missing === 'both')) {
+      // 💡 महा-सुधार: अगर यह सादी मीडिया/फोटो है (isPlainMedia: true), तो बोट अलर्ट बिल्कुल नहीं देगा!
+      if (!addrCheck.isPlainMedia && addrCheck.isAddress === false) {
         
         let dynamicReason = "";
         if (addrCheck.missing === 'pincode') {
@@ -298,7 +303,7 @@ bot.on('message', async (msg) => {
         }
         
         let alertMsg = `${dynamicReason}\n\n` +
-                       `यह आपका ऑर्डर आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                       `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
                        `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                        `<code>${escapeHTML(cleanText)}</code>\n\n` +
                        `🚨 <b>कृपया मोबाइल नंबर, पिनकोड और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
@@ -318,13 +323,11 @@ bot.on('message', async (msg) => {
           }
         } catch (e) { console.error("Alert Sender Failed:", e.message); }
         
-        return; // अधूरा ऑर्डर यहीं ब्लॉक, आगे नहीं जाएगा!
+        return; // अधूरा खराब एड्रेस यहीं ब्लॉक!
       }
     }
 
-    // अगर ऊपर की कंडीशन मैच नहीं हुई, तो इसका मतलब एड्रेस या तो बिल्कुल सही है या सादा टेक्स्ट है।
-    // अब यह सुरक्षित रूप से आपके पुराने कतार सिस्टम (Queue) में जमा होगा:
-
+    // अगर फोटो सादी है या एड्रेस 100% सही है, तो वो कतार (Queue) में जमा होगी और ग्रुप में जाएगी:
     if (!msg.photo && !msg.video && cleanText.length < 10 && cleanText !== "") {
       try {
         await bot.sendMessage(adminGroupId, `📝: ${escapeHTML(cleanText)}`, { parse_mode: 'HTML' });
