@@ -6,9 +6,9 @@ const adminGroupId = process.env.ADMIN_GROUP_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर वेब सर्वर स्टेबिलिटी
+// रेंडर वेब सर्वर स्टेबिलिटी के लिए
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active - Strict Group Protection Mode'); });
+const server = http.createServer((req, res) => { res.end('Engine Active - Perfect Strict Address Verification Mode'); });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
@@ -70,17 +70,22 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- एड्रेस डिटेक्टर (सटीक कमी पकड़ने वाला सिस्टम) ---
+// --- ⚙️ महा-सुधार: मोबाइल नंबर और पिनकोड की 100% सटीक जांच प्रणाली ---
 function checkAddressDetails(txt) {
   if (!txt) return { isAddress: false, missing: 'both' };
   
   let cleanTxt = txt.toString().trim();
-  if (cleanTxt.length < 20) return { isAddress: false, missing: 'both' };
+  
+  // अगर कोई छोटा-मोटा टेक्स्ट है तो उसे एड्रेस नहीं मानेंगे
+  if (cleanTxt.length < 15) return { isAddress: false, missing: 'none' };
 
-  // मोबाइल नंबर के बीच के स्पेस को साफ करना
+  // मोबाइल नंबर के बीच के स्पेस को साफ करना (जैसे: 93515 20621 को एक करना)
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
-  const hasValidPhone = /\b\d{9,12}\b/.test(textForPhoneCheck);
+  // भारतीय मोबाइल नंबर (9 से 12 अंक) की सटीक जांच
+  const hasValidPhone = /(?:(?:\+|0{0,2})91[\s-]*)?[6-9]\d{9}\b|\b\d{10,12}\b/.test(textForPhoneCheck);
+  
+  // पिनकोड (5 से 7 अंक) की सटीक जांच
   const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);
 
   if (hasValidPhone && hasPinCode) {
@@ -94,7 +99,7 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both' };
 }
 
-// कतार इंजन (15 सेकंड लॉक)
+// कतार इंजन (15 सेकंड लॉक - बंडल डिलीवरी)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -273,14 +278,13 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- रीसेलर साइड फिल्टर और सख्त ग्रुप सुरक्षा ---
+  // --- रीसेलर साइड सख्त फ़िल्टर सुरक्षा ---
   if (chatId !== adminGroupId) {
     
-    // 💡 सबसे बड़ा ताला: कतार इंजन में एंट्री करने से पहले ही अधूरे एड्रेस की जांच करना
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
       
-      // अगर एड्रेस है (लंबाई 20 से ज्यादा) पर मोबाइल या पिनकोड गायब है
+      // शर्त 2 & 3: अगर एड्रेस में गड़बड़ी है, तो उसे एडमिन ग्रुप में जाने से यहीं तुरंत रोकना
       if (!addrCheck.isAddress && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone' || addrCheck.missing === 'both')) {
         
         let dynamicReason = "";
@@ -292,8 +296,11 @@ bot.on('message', async (msg) => {
           dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों मौजूद नहीं हैं!</b>`;
         }
         
+        // शर्त 1: रीसेलर का भेजा गया एड्रेस नीचे साफ़-साफ़ हाईलाइट (शो) होना चाहिए
         let alertMsg = `${dynamicReason}\n\n` +
                        `यह आपका ऑर्डर आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                       `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
+                       `<code>${escapeHTML(cleanText)}</code>\n\n` +
                        `🚨 <b>कृपया मोबाइल नंबर, पिनकोड और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
                        `━━━━━━━━━━━━━━━━━━━━\n` +
                        `💡 <i>यदि आपको ऑर्डर भेजने में कोई समस्या आ रही है या मदद की जरूरत है, तो आप मुझसे संपर्क कर सकते हैं:</i>\n\n` +
@@ -302,7 +309,7 @@ bot.on('message', async (msg) => {
                        `💬 @Omprakash9950`;
 
         try {
-          // रीसेलर को चेतावनी देकर अलर्ट भेजना (बिना रिप्लाई लिंक के, फ्रेश मीडिया मैसेज)
+          // रीсеलर को सीधे उसी की फोटो के साथ अलर्ट डिलीवर करना
           if (msg.photo) {
             const photoId = msg.photo[msg.photo.length - 1].file_id;
             await bot.sendPhoto(chatId, photoId, { caption: alertMsg, parse_mode: 'HTML' });
@@ -312,8 +319,7 @@ bot.on('message', async (msg) => {
           }
         } catch (e) { console.error("Alert Sender Failed:", e.message); }
         
-        // 🔥 महा-सुधार: यहाँ से सीधा 'return' कर रहे हैं। 
-        // इसका मतलब यह अधूरा मैसेज कतार (userSessions) में स्टोर नहीं होगा और न ही कभी आपके ग्रुप में जाएगा!
+        // यहाँ से सीधा 'return' यानी यह खराब मैसेज कतार (Memory Queue) में नहीं जाएगा और एडमिन ग्रुप में कभी नहीं पहुँचेगा!
         return; 
       }
     }
