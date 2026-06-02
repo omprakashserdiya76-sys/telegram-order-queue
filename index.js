@@ -9,14 +9,13 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji 25s Bundle & 15s Group Gap Mode'); 
+  res.end('Engine Active - Exact Reply Mapping Mode'); 
 });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
 
-// --- 🌐 ग्लोबल कतार (Global Queue) प्रबंधन प्रणाली ---
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
 
@@ -132,7 +131,7 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both', isPlainMedia: false };
 }
 
-// --- 📦 कतार प्रोसेसिंग और 15 सेकंड डिलीवरी डिले इंजन ---
+// --- 📦 कतार Processing इंजन ---
 async function processUserSession(chatId) {
   const session = userSessions.get(chatId);
   if (!session || session.messages.length === 0) return;
@@ -142,17 +141,55 @@ async function processUserSession(chatId) {
 
   resellerNamesMap.set(userId, resellerName);
 
+  // 🚨 सुरक्षा लॉक: सबसे पहले पूरे बंडल का टेक्स्ट मिलाकर चेक करना
+  let entireBundleText = "";
+  let sampleMsgId = messages[0].originalMsgId;
+  for (const m of messages) {
+    if (m.text) entireBundleText += m.text + "\n";
+  }
+  entireBundleText = entireBundleText.trim();
+
+  let hasAnyMedia = messages.some(m => m.type === 'photo' || m.type === 'video');
+  if (hasAnyMedia && entireBundleText.length >= 35) {
+    let globalCheck = checkAddressDetails(entireBundleText);
+    
+    if (globalCheck.isAddress === false) {
+      let dynamicReason = "";
+      if (globalCheck.missing === 'pincode') {
+        dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत (जैसे 5 अंक का) है!</b>`;
+      } else if (globalCheck.missing === 'phone') {
+        dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा (जैसे 9 अंक का) है!</b>`;
+      } else if (globalCheck.missing === 'both') {
+        dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`;
+      }
+      
+      let alertMsg = `${dynamicReason}\n\n` +
+                     `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                     `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
+                     `<code>${escapeHTML(entireBundleText)}</code>\n\n` +
+                     `🚨 <b>कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
+                     `━━━━━━━━━━━━━━━━━━━━\n` +
+                     `👤 <b>ओमप्रकाश</b> | 📞 <code>9376535752</code>`;
+
+      try {
+        await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
+      } catch (e) { console.error("Alert Sender Failed:", e.message); }
+      return; 
+    }
+  }
+
+  // पास होने पर ऑर्डर्स को अलग-अलग टुकड़ों में बांटना
   let separatedOrders = [];
 
   for (const m of messages) {
     if (m.type === 'photo' || m.type === 'video') {
       let addrCheck = checkAddressDetails(m.text);
-      
       if (m.text && m.text.trim().length >= 35) {
         separatedOrders.push({
           text: m.text.trim(),
           media: [m],
-          addrCheck: addrCheck
+          addrCheck: addrCheck,
+          originalMsgId: m.originalMsgId // 💡 असली एड्रेस मैसेज आईडी को स्टोर रखना
         });
       } else {
         if (separatedOrders.length > 0) {
@@ -161,7 +198,8 @@ async function processUserSession(chatId) {
           separatedOrders.push({
             text: "",
             media: [m],
-            addrCheck: addrCheck
+            addrCheck: addrCheck,
+            originalMsgId: m.originalMsgId
           });
         }
       }
@@ -170,12 +208,12 @@ async function processUserSession(chatId) {
       separatedOrders.push({
         text: m.text.trim(),
         media: [],
-        addrCheck: addrCheck
+        addrCheck: addrCheck,
+        originalMsgId: m.originalMsgId
       });
     }
   }
 
-  // तैयार ऑर्डर्स को तुरंत ग्रुप में भेजने के बजाय 'ग्लोबल डिलीवरी कतार' में धकेलें
   for (const order of separatedOrders) {
     globalDeliveryQueue.push({
       userId: userId,
@@ -185,66 +223,38 @@ async function processUserSession(chatId) {
     });
   }
 
-  // कतार को एक्टिवेट करें
   triggerQueueProcessor();
 }
 
-// कतार को नियंत्रित करने वाला लूप
+// 15 सेकंड का गैप लूप
 async function triggerQueueProcessor() {
   if (isProcessingQueue || globalDeliveryQueue.length === 0) return;
   isProcessingQueue = true;
 
   while (globalDeliveryQueue.length > 0) {
     const currentTask = globalDeliveryQueue.shift();
-    
-    // ऑर्डर को एडमिन ग्रुप में डिलीवर करें
     await deliverOrderToAdminGroup(currentTask);
 
-    // ⏱️ नियम नंबर 2: प्रत्येक ऑर्डर डिलीवरी के बाद कतार पूरे 15 सेकंड का अंतराल (गेप) लेगी
     if (globalDeliveryQueue.length > 0) {
-      await new Promise(resolve => setTimeout(resolve, 15000));
+      await new Promise(resolve => setTimeout(resolve, 15000)); 
     }
   }
 
   isProcessingQueue = false;
 }
 
-// वास्तविक डिलीवरी फंक्शन
+// एडमिन ग्रुप में सटीक डिलीवरी फंक्शन
 async function deliverOrderToAdminGroup(task) {
   const { userId, resellerName, orderData, messagesContext } = task;
-  const { text: combinedText, media: mediaItems, addrCheck } = orderData;
+  const { text: combinedText, media: mediaItems, addrCheck, originalMsgId: orderOriginalMsgId } = orderData;
   const safeResellerName = escapeHTML(resellerName);
   
-  let sampleMsgId = mediaItems.length > 0 ? mediaItems[0].originalMsgId : messagesContext[0].originalMsgId;
-
-  if (mediaItems.length > 0 && !addrCheck.isPlainMedia && addrCheck.isAddress === false) {
-    let dynamicReason = "";
-    if (addrCheck.missing === 'pincode') {
-      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत (जैसे 5 अंक का) है!</b>`;
-    } else if (addrCheck.missing === 'phone') {
-      dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा (जैसे 9 अंक का) है!</b>`;
-    } else if (addrCheck.missing === 'both') {
-      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`;
-    }
-    
-    let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
-                   `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
-                   `<code>${escapeHTML(combinedText)}</code>\n\n` +
-                   `🚨 <b>कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और Produkt फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
-                   `━━━━━━━━━━━━━━━━━━━━\n` +
-                   `👤 <b>ओमप्रकाश</b> | 📞 <code>9376535752</code>`;
-
-    try {
-      await bot.sendMessage(userId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
-    } catch (e) { console.error("Alert Sender Failed:", e.message); }
-    return; 
-  }
+  let sampleMsgId = orderOriginalMsgId || (mediaItems.length > 0 ? mediaItems[0].originalMsgId : messagesContext[0].originalMsgId);
 
   let assignedOrderNumStr = null;
   let isRealOrder = false;
 
-  if (mediaItems.length > 0 && combinedText.length >= 35 && addrCheck.isAddress) {
+  if (combinedText.length >= 35 && checkAddressDetails(combinedText).isAddress) {
     isRealOrder = true;
     let currentCount = resellerOrderCounts.get(userId) || 0;
     currentCount++;
@@ -265,6 +275,7 @@ async function deliverOrderToAdminGroup(task) {
       let sentHeader = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'HTML' });
       if (sentHeader) {
         groupHeaderMsgId = sentHeader.message_id.toString();
+        // 💡 100% पक्का सुधार: ग्रुप के एड्रेस हेडर को सीधे रीसेलर के एड्रेस मैसेज आईडी से लिंक करना
         adminToResellerMsgMap.set(groupHeaderMsgId, sampleMsgId.toString());
       }
     } catch (e) { console.error("Header Send Error:", e.message); }
@@ -290,6 +301,7 @@ async function deliverOrderToAdminGroup(task) {
       if (sentMedia && !isRealOrder) {
         adminToResellerMsgMap.set(sentMedia.message_id.toString(), mediaItem.originalMsgId.toString());
       } else if (sentMedia && isRealOrder && groupHeaderMsgId) {
+        // 💡 सुधार: अगर असली ऑर्डर है, तो फोटो पर होने वाले रिप्लाई को भी रीसेलर के एड्रेस मैसेज पर ही रूट करना
         adminToResellerMsgMap.set(sentMedia.message_id.toString(), sampleMsgId.toString());
       }
     } catch (e) { console.error("Media Send Error:", e.message); }
@@ -373,7 +385,7 @@ bot.on('message', async (msg) => {
       currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id });
     }
 
-    // ⏱️ नियम नंबर 1: रीसेलर के लिए लॉक टाइमर पूरे 25 सेकंड (25000ms) ही रहेगा, कम नहीं होगा।
+    // ⏱️ रीसेलर लॉक टाइमर पूरे 25 सेकंड (25000ms)
     currentSession.timeoutId = setTimeout(() => {
       processUserSession(chatId);
     }, 25000);
