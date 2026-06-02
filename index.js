@@ -6,10 +6,10 @@ const adminGroupId = process.env.ADMIN_GROUP_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर वेब सर्वर स्टेबिलिटी (Zero Syntax Error)
+// रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Perfect Address Security Mode'); 
+  res.end('Engine Active - Strict Bundle & Address Lock Mode'); 
 });
 server.listen(port);
 
@@ -24,7 +24,7 @@ function escapeHTML(text) {
     .replace(/>/g, "&gt;");
 }
 
-// --- रोजाना रात 12 बजे ग्रुप में पूरी रिपोर्ट और पर्सनल मैसेज भेजना ---
+// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -71,28 +71,23 @@ function startDailyResetTimer() {
 startDailyResetTimer();
 
 const userSessions = new Map();
-let globalUserQueue = [];
-let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- ⚙️ नया अक्षरों की लंबाई पर आधारित अचूक डिटेक्टर इंजन ---
+// --- ⚙️ अचूक एड्रेस डिटेक्टर इंजन (अक्षरों की लंबाई आधारित) ---
 function checkAddressDetails(txt) {
-  // नियम 1: अगर टेक्स्ट बिल्कुल खाली है, तो यह 100% सादी प्रोडक्ट फोटो है (कोई अलर्ट नहीं)
   if (!txt || txt.toString().trim() === "") {
     return { isAddress: false, missing: 'none', isPlainMedia: true };
   }
   
   let cleanTxt = txt.toString().trim();
   
-  // नियम 2: अगर फोटो के साथ लिखा टेक्स्ट 35 अक्षरों से छोटा है, तो इसे सादी पूछताछ/विवरण मानेंगे (कोई अलर्ट नहीं)
+  // यदि फोटो के साथ लिखा गया टेक्स्ट 35 अक्षरों से कम है, तो यह सादी फोटो/पूछताछ है
   if (cleanTxt.length < 35) {
     return { isAddress: false, missing: 'none', isPlainMedia: true };
   }
 
-  // अगर 35 अक्षरों से बड़ा है, तो बोट इसे 'एड्रेस' मानकर सख्त चेकिंग चालू करेगा
+  // मोबाइल और पिनकोड की सटीक खोज
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
-
-  // मोबाइल नंबर (10 से 12 अंक) और पिनकोड (5 से 7 अंक) की जांच
   const hasValidPhone = /(?:(?:\+|0{0,2})91[\s-]*)?[6-9]\d{9}\b|\b\d{10,12}\b/.test(textForPhoneCheck);
   const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);
 
@@ -107,69 +102,69 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both', isPlainMedia: false };
 }
 
-// कतार इंजन (15 सेकंड लॉक - बंडल डिलीवरी)
-async function processGlobalUserQueue() {
-  if (globalUserQueue.length === 0) {
-    isProcessingQueue = false;
-    return;
-  }
+// --- 📦 कतार प्रोसेसिंग इंजन (25 सेकंड बाद एक साथ डिलीवरी) ---
+async function processUserSession(chatId) {
+  const session = userSessions.get(chatId);
+  if (!session || session.messages.length === 0) return;
 
-  isProcessingQueue = true;
-  const userTask = globalUserQueue.shift(); 
-  const { userId, resellerName, items } = userTask;
+  const { userId, resellerName, messages } = session;
+  userSessions.delete(chatId); // सेशन खाली करें
 
   resellerNamesMap.set(userId, resellerName);
 
-  let subOrders = [];
-  let currentOrderMedia = [];
-  let detectedAddresses = [];
+  // पूरे बंडल में से टेक्स्ट/एड्रेस को ढूंढना
+  let combinedText = "";
+  let sampleMsgId = null;
+  let mediaItems = [];
 
-  for (const item of items) {
-    if (item.type === 'photo' || item.type === 'video') {
-      let check = checkAddressDetails(item.text);
-      if (check.isAddress) {
-        item.isRealAddress = true;
-        detectedAddresses.push(item);
-      } else {
-        currentOrderMedia.push(item);
+  for (const m of messages) {
+    if (m.text) combinedText += m.text + "\n";
+    if (!sampleMsgId) sampleMsgId = m.originalMsgId;
+    if (m.type === 'photo' || m.type === 'video') {
+      mediaItems.push(m);
+    }
+  }
+  combinedText = combinedText.trim();
+
+  // अगर इस बंडल में कोई भी फोटो/वीडियो मौजूद है, तो एड्रेस चेक होगा
+  if (mediaItems.length > 0) {
+    let addrCheck = checkAddressDetails(combinedText);
+
+    // 🚨 अगर यह सादी फोटो नहीं है और एड्रेस अधूरा निकला $\rightarrow$ ब्लॉक करें और अलर्ट भेजें
+    if (!addrCheck.isPlainMedia && addrCheck.isAddress === false) {
+      let dynamicReason = "";
+      if (addrCheck.missing === 'pincode') {
+        dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) मौजूद नहीं है!</b>`;
+      } else if (addrCheck.missing === 'phone') {
+        dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर (Mobile Number) मौजूद नहीं है!</b>`;
+      } else if (addrCheck.missing === 'both') {
+        dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों मौजूद नहीं हैं!</b>`;
       }
-    } else if (item.type === 'text') {
-      let check = checkAddressDetails(item.text);
-      if (check.isAddress) {
-        item.isRealAddress = true;
-        detectedAddresses.push(item);
-      } else {
-        if (item.text.length >= 10) { 
-          currentOrderMedia.push(item);
-        }
-      }
+      
+      let alertMsg = `${dynamicReason}\n\n` +
+                     `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                     `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
+                     `<code>${escapeHTML(combinedText)}</code>\n\n` +
+                     `🚨 <b>कृपया मोबाइल नंबर, पिनकोड और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
+                     `━━━━━━━━━━━━━━━━━━━━\n` +
+                     `👤 <b>ओमप्रकाश</b> | 📞 <code>9376535752</code>`;
+
+      try {
+        await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
+      } catch (e) { console.error("Alert Fail:", e.message); }
+      
+      return; // ⛔ अधूरा ऑर्डर यहीं खत्म! ग्रुप में कुछ भी नहीं जाएगा।
     }
   }
 
-  if (detectedAddresses.length > 0) {
-    if (detectedAddresses.length === 1) {
-      subOrders.push({ address: detectedAddresses[0], media: currentOrderMedia });
-    } else {
-      let mediaPerOrder = Math.ceil(currentOrderMedia.length / detectedAddresses.length);
-      for (let i = 0; i < detectedAddresses.length; i++) {
-        let startIdx = i * mediaPerOrder;
-        let endIdx = startIdx + mediaPerOrder;
-        let slicedMedia = currentOrderMedia.slice(startIdx, endIdx);
-        subOrders.push({ address: detectedAddresses[i], media: slicedMedia });
-      }
-    }
-  } else {
-    if (currentOrderMedia.length > 0) {
-      subOrders.push({ address: null, media: currentOrderMedia });
-    }
-  }
+  // --- अगर ऑर्डर वैध है या केवल सादी फोटो/मैसेज है $\rightarrow$ ग्रुप में भेजें ---
+  let assignedOrderNumStr = null;
+  let isRealOrder = false;
 
-  for (const subOrder of subOrders) {
-    let mainAddressItem = subOrder.address;
-    let orderMedia = subOrder.media;
-    let assignedOrderNumStr = null;
-
-    if (mainAddressItem) {
+  if (mediaItems.length > 0 && combinedText.length >= 35) {
+    let finalCheck = checkAddressDetails(combinedText);
+    if (finalCheck.isAddress) {
+      isRealOrder = true;
       let currentCount = resellerOrderCounts.get(userId) || 0;
       currentCount++;
       resellerOrderCounts.set(userId, currentCount);
@@ -177,75 +172,70 @@ async function processGlobalUserQueue() {
       let cleanName = resellerName.replace(/[^a-zA-Z0-9]/g, "");
       let namePart = cleanName.substring(0, 2).toUpperCase();
       if (namePart.length < 2) namePart = "OR";
+      let idPart = userId.toString().substring(userId.toString().length - 1);
 
-      let idStr = userId.toString();
-      let idPart = idStr.substring(idStr.length - 1);
-
-      let prefix = `${namePart}${idPart}`;
-      let paddedCount = currentCount.toString().padStart(3, '0');
-      assignedOrderNumStr = `${prefix}-${paddedCount}`;
-    }
-
-    const safeResellerName = escapeHTML(resellerName);
-
-    if (mainAddressItem) {
-      try {
-        let sentMsg = null;
-        let safeAddressText = escapeHTML(mainAddressItem.text);
-        let orderHeader = `${safeAddressText}\n\n👤 ${safeResellerName}\nID: ${userId}\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
-        
-        if (mainAddressItem.type === 'photo') {
-          sentMsg = await bot.sendPhoto(adminGroupId, mainAddressItem.fileId, { caption: orderHeader, parse_mode: 'HTML' });
-        } else if (mainAddressItem.type === 'video') {
-          sentMsg = await bot.sendVideo(adminGroupId, mainAddressItem.fileId, { caption: orderHeader, parse_mode: 'HTML' });
-        } else {
-          sentMsg = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'HTML' });
-        }
-        if (sentMsg && mainAddressItem.originalMsgId) {
-          adminToResellerMsgMap.set(sentMsg.message_id.toString(), mainAddressItem.originalMsgId);
-        }
-      } catch (e) { console.error("Address Sent Error:", e.message); }
-    }
-
-    for (const mediaItem of orderMedia) {
-      try {
-        let sentMsg = null;
-        let caption = `👤 ${safeResellerName}\nID: ${userId}`;
-        if (assignedOrderNumStr) {
-          caption += `\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
-        }
-        if (mediaItem.text && mediaItem.text !== "") {
-          caption += `\n\n📝 विवरण: ${escapeHTML(mediaItem.text)}`;
-        }
-
-        if (mediaItem.type === 'photo') {
-          sentMsg = await bot.sendPhoto(adminGroupId, mediaItem.fileId, { caption: caption, parse_mode: 'HTML' });
-        } else if (mediaItem.type === 'video') {
-          sentMsg = await bot.sendVideo(adminGroupId, mediaItem.fileId, { caption: caption, parse_mode: 'HTML' });
-        } else {
-          let normalText = `👤 ${safeResellerName}\nID: ${userId}\n📝: ${escapeHTML(mediaItem.text)}`;
-          if (assignedOrderNumStr) {
-            normalText = `👤 ${safeResellerName}\nID: ${userId}\n📦 <b>ORD # ${assignedOrderNumStr}</b>\n📝: ${escapeHTML(mediaItem.text)}`;
-          }
-          sentMsg = await bot.sendMessage(adminGroupId, normalText, { parse_mode: 'HTML' });
-        }
-        
-        if (sentMsg && mediaItem.originalMsgId) {
-          adminToResellerMsgMap.set(sentMsg.message_id.toString(), mediaItem.originalMsgId);
-        }
-      } catch (e) { console.error("Media Sent Error:", e.message); }
-    }
-
-    if (mainAddressItem) {
-      try {
-        await bot.sendMessage(adminGroupId, `🟢 <b>Next Order</b> 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'HTML' });
-      } catch (e) { console.error("Divider Error:", e.message); }
+      assignedOrderNumStr = `${namePart}${idPart}-${currentCount.toString().padStart(3, '0')}`;
     }
   }
 
-  setTimeout(processGlobalUserQueue, 15000);
+  const safeResellerName = escapeHTML(resellerName);
+
+  // 1. अगर एड्रेस मौजूद है, तो सबसे पहले एड्रेस हेडर भेजें
+  if (isRealOrder) {
+    try {
+      let orderHeader = `${escapeHTML(combinedText)}\n\n👤 ${safeResellerName}\nID: ${userId}\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
+      let sentHeader = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'HTML' });
+      if (sentHeader && sampleMsgId) {
+        adminToResellerMsgMap.set(sentHeader.message_id.toString(), sampleMsgId.toString());
+      }
+    } catch (e) { console.error("Header Send Error:", e.message); }
+  }
+
+  // 2. मीडिया आइटम्स (फोटो/वीडियो) को सीरियल नंबर के साथ ग्रुप में भेजें
+  for (const mediaItem of mediaItems) {
+    try {
+      let caption = `👤 ${safeResellerName}\nID: ${userId}`;
+      if (assignedOrderNumStr) {
+        caption += `\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
+      }
+      // अगर यह सादी फोटो है जिसके साथ छोटा विवरण था
+      if (!isRealOrder && combinedText !== "") {
+        caption += `\n\n📝 विवरण: ${escapeHTML(combinedText)}`;
+      }
+
+      let sentMedia = null;
+      if (mediaItem.type === 'photo') {
+        sentMedia = await bot.sendPhoto(adminGroupId, mediaItem.fileId, { caption: caption, parse_mode: 'HTML' });
+      } else if (mediaItem.type === 'video') {
+        sentMedia = await bot.sendVideo(adminGroupId, mediaItem.fileId, { caption: caption, parse_mode: 'HTML' });
+      }
+
+      if (sentMedia && mediaItem.originalMsgId) {
+        adminToResellerMsgMap.set(sentMedia.message_id.toString(), mediaItem.originalMsgId.toString());
+      }
+    } catch (e) { console.error("Media Send Error:", e.message); }
+  }
+
+  // 3. अगर कोई मीडिया नहीं है, सिर्फ सादा टेक्स्ट मैसेज है (पूछताछ)
+  if (mediaItems.length === 0 && combinedText !== "") {
+    try {
+      let normalText = `👤 ${safeResellerName} (ID: ${userId})\n📝: ${escapeHTML(combinedText)}`;
+      let sentTxt = await bot.sendMessage(adminGroupId, normalText, { parse_mode: 'HTML' });
+      if (sentTxt && sampleMsgId) {
+        adminToResellerMsgMap.set(sentTxt.message_id.toString(), sampleMsgId.toString());
+      }
+    } catch (e) { console.error("Pure Text Send Error:", e.message); }
+  }
+
+  // एंडर डिवाइडर लाइन
+  if (isRealOrder) {
+    try {
+      await bot.sendMessage(adminGroupId, `🟢 <b>Next Order</b> 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'HTML' });
+    } catch (e) { console.error("Divider Error:", e.message); }
+  }
 }
 
+// --- टेलीग्राम मैसेज रिसीवर ---
 bot.on('message', async (msg) => {
   if (!msg.chat || !msg.from) return;
 
@@ -255,7 +245,7 @@ bot.on('message', async (msg) => {
 
   let cleanText = (msg.text || msg.caption || "").trim();
 
-  // एडमिन रिप्लाई रूट सिस्टम
+  // 1. एडमिन रिप्लाई रूट सिस्टम
   if (chatId === adminGroupId && msg.reply_to_message) {
     const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
     const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -286,86 +276,30 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- रीसेलर साइड फ़िल्टर सुरक्षा दीवार ---
+  // 2. रीसेलर साइड फ़िल्टर (सुरक्षित बंडल लॉजिक)
   if (chatId !== adminGroupId) {
-    
-    if (msg.photo || msg.video) {
-      let addrCheck = checkAddressDetails(cleanText);
-      
-      // अगर यह सादी फोटो नहीं है और एड्रेस में कुछ गायब है (यानी एड्रेस अधूरा है)
-      if (!addrCheck.isPlainMedia && addrCheck.isAddress === false) {
-        
-        let dynamicReason = "";
-        if (addrCheck.missing === 'pincode') {
-          dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) मौजूद नहीं है!</b>`;
-        } else if (addrCheck.missing === 'phone') {
-          dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर (Mobile Number) मौजूद नहीं है!</b>`;
-        } else if (addrCheck.missing === 'both') {
-          dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों मौजूद नहीं हैं!</b>`;
-        }
-        
-        // 💡 महा-सुधार: रीसेलर का भेजा हुआ अधूरा एड्रेस ही साफ-साफ नीचे हाइलाइट होगा!
-        let alertMsg = `${dynamicReason}\n\n` +
-                       `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
-                       `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
-                       `<code>${escapeHTML(cleanText)}</code>\n\n` +
-                       `🚨 <b>कृपया मोबाइल नंबर, पिनकोड और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
-                       `━━━━━━━━━━━━━━━━━━━━\n` +
-                       `💡 <i>यदि आपको ऑर्डर भेजने में कोई समस्या आ रही है या मदद की जरूरत है, तो आप मुझसे संपर्क कर सकते हैं:</i>\n\n` +
-                       `👤 <b>ओमप्रकाश</b>\n` +
-                       `📞 <code>9376535752</code>\n` +
-                       `💬 @Omprakash9950`;
-
-        try {
-          // रीसेलर को बिना फोटो के, केवल टेक्स्ट मैसेज से अलर्ट भेजेंगे ताकि फोटो ग्रुप में जाने का रिस्क ही खत्म हो जाए
-          await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: msg.message_id });
-        } catch (e) { console.error("Alert Sender Failed:", e.message); }
-        
-        return; // ⛔ अधूरा ऑर्डर यहीं ब्लॉक! ग्रुप में न फोटो जाएगी, न ही एड्रेस जाएगा।
-      }
-    }
-
-    // केस: सादा टेक्स्ट मैसेज (बिना फोटो के) - सीधे बिना किसी चेकिंग के तुरंत ग्रुप में जाएगा
-    if (!msg.photo && !msg.video) {
-      if (cleanText !== "") {
-        try {
-          await bot.sendMessage(adminGroupId, `👤 ${escapeHTML(resellerName)} (ID: ${chatId})\n📝: ${escapeHTML(cleanText)}`, { parse_mode: 'HTML' });
-        } catch (e) { console.error("Direct Text Error:", e.message); }
-      }
-      return;
-    }
-
-    // सादी फोटो या 100% सही एड्रेस सुरक्षित रूप से कतार में जमा होंगे:
     let currentSession = userSessions.get(chatId);
     if (!currentSession) {
-      currentSession = { userId: chatId, resellerName: resellerName, messages: [] };
+      currentSession = { userId: chatId, resellerName: resellerName, messages: [], timeoutId: null };
       userSessions.set(chatId, currentSession);
     }
 
     if (currentSession.timeoutId) clearTimeout(currentSession.timeoutId);
 
+    // मैसेज को कतार (Queue) के अंदर जमा करना - चाहे वो फोटो हो या सादा टेक्स्ट
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
       currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, originalMsgId: msg.message_id });
     } else if (msg.video) {
       const videoId = msg.video.file_id;
       currentSession.messages.push({ type: 'video', fileId: videoId, text: cleanText, originalMsgId: msg.message_id });
+    } else if (cleanText !== "") {
+      currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id });
     }
 
+    // ⏱️ सख्त सुरक्षा लॉक: 25 सेकंड तक पूरे डेटा को होल्ड करके रखें, पहले कुछ नहीं भेजना है!
     currentSession.timeoutId = setTimeout(() => {
-      const sessionToSend = userSessions.get(chatId);
-      if (sessionToSend && sessionToSend.messages.length > 0) {
-        globalUserQueue.push({
-          userId: sessionToSend.userId,
-          resellerName: sessionToSend.resellerName,
-          items: [...sessionToSend.messages]
-        });
-        userSessions.delete(chatId);
-
-        if (!isProcessingQueue) {
-          processGlobalUserQueue();
-        }
-      }
+      processUserSession(chatId);
     }, 25000);
   }
 });
