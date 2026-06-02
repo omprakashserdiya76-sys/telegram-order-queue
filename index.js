@@ -8,22 +8,18 @@ const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर वेब सर्वर स्टेबिलिटी के लिए
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active (Absolute Perfect Final Mode)'); });
+const server = http.createServer((req, res) => { res.end('Engine Active - Ultimate Fixed Mode'); });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
 
-// HTML मोड के लिए सुरक्षित टेक्स्ट बनाने का फंक्शन
 function escapeHTML(text) {
   if (!text) return "";
-  return text.toString()
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-// --- नियम 1: रोजाना रात 12 बजे फोटो जैसी पूरी लिस्ट ग्रुप में भेजना और पर्सनल मैसेज भेजना ---
+// --- नियम 1: रोजाना रात 12 बजे ग्रुप में पूरी रिपोर्ट भेजना और पर्सनल मैसेज भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -31,7 +27,6 @@ function startDailyResetTimer() {
     
     if (indiaTime.getHours() === 0 && indiaTime.getMinutes() === 0) {
       if (resellerOrderCounts.size > 0) {
-        // बिल्कुल आपकी फोटो (1001503229.jpg) जैसा ग्रुप मैसेज फॉर्मेट
         let reportText = `📊 <b>Daily Orders Report (रात 12:00 बजे)</b> 📊\n`;
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `आज सभी रीसेलर्स के कुल ऑर्डर्स की लिस्ट:\n\n`;
@@ -39,20 +34,17 @@ function startDailyResetTimer() {
         for (const [userId, count] of resellerOrderCounts.entries()) {
           const rName = resellerNamesMap.get(userId) || "Reseller";
           const safeName = escapeHTML(rName);
-          
-          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल ऑर्डर: <b>${count}</b>\n`;
+          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल आदेश: <b>${count}</b>\n`;
           
           try {
-            // रीसेलर को पर्सनल समरी मैसेज
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
                                 `* जिन ऑर्डर्स का COD अमाउंट ₹3900 से अधिक है, उन पर ₹200 शिपिंग charge लगेगा।\n` +
                                 `* बाकी सभी ऑर्डर्स पर ₹100 शिपिंग charge लगेगा।\n` +
                                 `मार्जिन जुड़वाने के लिए, कृपया शिपिंग charge का भुगतान करें और रसीद मुझे व्हाट्सएप (8890438038)पर भेज दें। धन्यवाद!\n\n` +
                                 `हमारे साथ काम करने के लिए धन्यवाद! 🙏`;
-                                
             await bot.sendMessage(userId, personalMsg, { parse_mode: 'HTML' });
           } catch (err) {
-            console.error(`रीसेलर ${userId} को समरी भेजने में फेल:`, err.message);
+            console.error(`Error sending personal report to ${userId}:`, err.message);
           }
         }
         
@@ -62,7 +54,7 @@ function startDailyResetTimer() {
         try {
           await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'HTML' });
         } catch (err) {
-          console.error("ग्रुप में रिपोर्ट भेजने में एरर:", err.message);
+          console.error("Error sending report to admin group:", err.message);
         }
         
         resellerOrderCounts.clear();
@@ -78,20 +70,19 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- सुधरा हुआ एड्रेस डिटेक्टर (बोल्ड टेक्स्ट, स्पेस हटाना और खिचड़ी नंबरों से सुरक्षा) ---
+// --- बोल्ड टेक्स्ट और स्पेस की बीमारी को खत्म करने वाला एड्रेस डिटेक्टर ---
 function checkAddressDetails(txt) {
   if (!txt) return { isAddress: false, missing: 'both' };
   
   let cleanTxt = txt.toString().trim();
   if (cleanTxt.length < 20) return { isAddress: false, missing: 'both' };
 
-  // स्पेस की बीमारी का पक्का इलाज: अंकों के बीच के स्पेस को बैकएंड में अस्थाई रूप से हटाना
-  // ताकि 93515 20621 को बोट 9351520621 पढ़ सके
+  // मोबाइल नंबर के बीच के स्पेस को हटाना ताकि 93515 20621 को बोट एक साथ पढ़ सके
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
-  // \b लगाने से शब्दों के बीच फंसे नंबर (100पहले1700) पूरी तरह रिजेक्ट हो जाएंगे
-  const hasValidPhone = /\b\d{9,12}\b/.test(textForPhoneCheck); // 9 से 12 अंकों का साफ नंबर (+91 या 9 अंक दोनों पास)
-  const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);            // 5 से 7 अंकों का साफ पिनकोड
+  // \b लगाने से अक्षरों के बीच फंसे खिचड़ी नंबर रिजेक्ट हो जाएंगे
+  const hasValidPhone = /\b\d{9,12}\b/.test(textForPhoneCheck);
+  const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);
 
   if (hasValidPhone && hasPinCode) {
     return { isAddress: true, missing: 'none' };
@@ -104,7 +95,7 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both' };
 }
 
-// कतार इंजन (15 सेकंड锁 - वीडियो, फोटो और बंडल सपोर्ट)
+// कतार इंजन (15 सेकंड लॉक - बंडल डिलीवरी)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -185,7 +176,6 @@ async function processGlobalUserQueue() {
 
     const safeResellerName = escapeHTML(resellerName);
 
-    // A. ग्रुप में मुख्य एड्रेस मैसेज भेजना
     if (mainAddressItem) {
       try {
         let sentMsg = null;
@@ -205,7 +195,6 @@ async function processGlobalUserQueue() {
       } catch (e) { console.error("Address Sent Error:", e.message); }
     }
 
-    // B. मीडिया फाइलें (फोटो और वीडियो) भेजना
     for (const mediaItem of orderMedia) {
       try {
         let sentMsg = null;
@@ -235,7 +224,6 @@ async function processGlobalUserQueue() {
       } catch (e) { console.error("Media Sent Error:", e.message); }
     }
 
-    // C. डिवाइडर केवल असली ऑर्डर्स के लिए
     if (mainAddressItem) {
       try {
         await bot.sendMessage(adminGroupId, `🟢 <b>Next Order</b> 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'HTML' });
@@ -253,10 +241,11 @@ bot.on('message', async (msg) => {
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   if (!resellerName) resellerName = "Reseller";
 
-  let text = msg.text || msg.caption || "";
-  let cleanText = text.trim();
+  // --- बोल्ड/इटैलिक स्टाइल हटाकर शुद्ध टेक्स्ट निकालना ---
+  let rawText = msg.text || msg.caption || "";
+  let cleanText = rawText.trim();
 
-  // --- एडमिन रिप्लाई रूट सिस्टम ---
+  // एडमिन रिप्लाई रूट सिस्टम
   if (chatId === adminGroupId && msg.reply_to_message) {
     const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
     const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -267,9 +256,7 @@ bot.on('message', async (msg) => {
       const originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
       
       let replyOptions = {};
-      if (originalResellerMsgId) {
-        replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
-      }
+      if (originalResellerMsgId) replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
 
       if (msg.photo) {
         const photoId = msg.photo[msg.photo.length - 1].file_id;
@@ -289,10 +276,10 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- रीसेलर साइड कतार कलेक्शन (25 सेकंड का होल्ड और ऑटो-रिजेक्शन अलर्ट) ---
+  // --- रीसेलर साइड कलेक्शन और तुरंत रिजेक्शन अलर्ट ---
   if (chatId !== adminGroupId) {
     
-    // रीसेलर ने फोटो/वीडियो के साथ अधूरा एड्रेस भेजा तो तुरंत रिजेक्ट करके मेमोरी से डिलीट करना
+    // अगर फोटो या वीडियो के साथ अधूरा एड्रेस है तो तुरंत अलर्ट भेजकर यहीं से डिलीट (रिटर्न) करना
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
       if (!addrCheck.isAddress && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone')) {
@@ -300,18 +287,18 @@ bot.on('message', async (msg) => {
         let missingDetailHindi = addrCheck.missing === 'pincode' ? "पिनकोड (Pincode)" : "मोबाइल नंबर (Mobile Number)";
         
         let alertMsg = `⚠️ <b>आपके एड्रेस में ${missingDetailHindi} गायब या सही नहीं है!</b>\n\n` +
-                       `यह आपका आदेश आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। यह मैसेज डिलीट कर दिया गया है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                       `यह आपका आदेश आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। यह मैसेज डिलीट कर दिया गया है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही आदेश स्वीकार किया जाएगा।\n\n` +
                        `🚨 <b>कृपया मोबाइल नंबर, पिनकोड और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
                        `━━━━━━━━━━━━━━━━━━━━\n` +
-                       `💡 <i>यदि आपको ऑर्डर भेजने में कोई समस्या आ रही है या मदद की जरूरत है, तो आप मुझसे संपर्क कर सकते हैं:</i>\n\n` +
+                       `💡 <i>यदि आपको आदेश भेजने में कोई समस्या आ रही है या मदद की जरूरत है, तो आप मुझसे संपर्क कर सकते हैं:</i>\n\n` +
                        `👤 <b>ओमप्रकाश</b>\n` +
                        `📞 <code>9376535752</code>\n` +
                        `💬 @Omprakash9950`;
 
         try {
           await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: msg.message_id });
-        } catch (e) { console.error("Alert Sent Error:", e.message); }
-        return; // सिस्टम मेमोरी से तुरंत डिलीट (डेटा कतार में नहीं जाएगा, यहीं से साफ)
+        } catch (e) { console.error("Alert Sender Failed:", e.message); }
+        return; // कतार में डेटा नहीं जाएगा, यहीं से साफ (तुरंत डिलीट)
       }
     }
 
