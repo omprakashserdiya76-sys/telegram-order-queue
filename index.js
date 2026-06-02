@@ -6,10 +6,10 @@ const adminGroupId = process.env.ADMIN_GROUP_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर वेब सर्वर स्टेबिलिटी के लिए (लाइन नंबर 20 एरर पूरी तरह फिक्स)
+// रेंडर वेब सर्वर स्टेबिलिटी (Zero Syntax Error)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Pure Fixed Safe Mode'); 
+  res.end('Engine Active - Perfect Address Security Mode'); 
 });
 server.listen(port);
 
@@ -75,30 +75,27 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- मोबाइल नंबर और पिनकोड की 100% सटीक जांच प्रणाली ---
+// --- ⚙️ नया अक्षरों की लंबाई पर आधारित अचूक डिटेक्टर इंजन ---
 function checkAddressDetails(txt) {
-  // अगर कोई टेक्स्ट लिखा ही नहीं है या खाली है, तो यह सादी प्रोडक्ट फोटो है (अलर्ट नहीं देना है)
+  // नियम 1: अगर टेक्स्ट बिल्कुल खाली है, तो यह 100% सादी प्रोडक्ट फोटो है (कोई अलर्ट नहीं)
   if (!txt || txt.toString().trim() === "") {
     return { isAddress: false, missing: 'none', isPlainMedia: true };
   }
   
   let cleanTxt = txt.toString().trim();
   
-  // अगर लिखा गया टेक्स्ट 15 अक्षरों से छोटा है, तो भी इसे सादा विवरण मानेंगे (कोई अलर्ट नहीं)
-  if (cleanTxt.length < 15) {
+  // नियम 2: अगर फोटो के साथ लिखा टेक्स्ट 35 अक्षरों से छोटा है, तो इसे सादी पूछताछ/विवरण मानेंगे (कोई अलर्ट नहीं)
+  if (cleanTxt.length < 35) {
     return { isAddress: false, missing: 'none', isPlainMedia: true };
   }
 
-  // मोबाइल नंबर के बीच के स्पेस को साफ़ करना
+  // अगर 35 अक्षरों से बड़ा है, तो बोट इसे 'एड्रेस' मानकर सख्त चेकिंग चालू करेगा
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
-  // भारतीय मोबाइल नंबर (10 से 12 अंक) की सटीक जांच
+  // मोबाइल नंबर (10 से 12 अंक) और पिनकोड (5 से 7 अंक) की जांच
   const hasValidPhone = /(?:(?:\+|0{0,2})91[\s-]*)?[6-9]\d{9}\b|\b\d{10,12}\b/.test(textForPhoneCheck);
-  
-  // पिनकोड (5 से 7 अंक) की सटीक जांच
   const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);
 
-  // अगर दोनों मौजूद हैं, तो यह 100% सही एड्रेस है
   if (hasValidPhone && hasPinCode) {
     return { isAddress: true, missing: 'none', isPlainMedia: false };
   } else if (hasValidPhone && !hasPinCode) {
@@ -295,7 +292,7 @@ bot.on('message', async (msg) => {
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
       
-      // केवल तभी अलर्ट भेजेंगे जब यह सादी फोटो न हो और एड्रेस वाकई अधूरा हो
+      // अगर यह सादी फोटो नहीं है और एड्रेस में कुछ गायब है (यानी एड्रेस अधूरा है)
       if (!addrCheck.isPlainMedia && addrCheck.isAddress === false) {
         
         let dynamicReason = "";
@@ -307,6 +304,7 @@ bot.on('message', async (msg) => {
           dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों मौजूद नहीं हैं!</b>`;
         }
         
+        // 💡 महा-सुधार: रीसेलर का भेजा हुआ अधूरा एड्रेस ही साफ-साफ नीचे हाइलाइट होगा!
         let alertMsg = `${dynamicReason}\n\n` +
                        `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
                        `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
@@ -319,27 +317,25 @@ bot.on('message', async (msg) => {
                        `💬 @Omprakash9950`;
 
         try {
-          if (msg.photo) {
-            const photoId = msg.photo[msg.photo.length - 1].file_id;
-            await bot.sendPhoto(chatId, photoId, { caption: alertMsg, parse_mode: 'HTML' });
-          } else if (msg.video) {
-            const videoId = msg.video.file_id;
-            await bot.sendVideo(chatId, videoId, { caption: alertMsg, parse_mode: 'HTML' });
-          }
+          // रीसेलर को बिना फोटो के, केवल टेक्स्ट मैसेज से अलर्ट भेजेंगे ताकि फोटो ग्रुप में जाने का रिस्क ही खत्म हो जाए
+          await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: msg.message_id });
         } catch (e) { console.error("Alert Sender Failed:", e.message); }
         
-        return; // अधूरा खराब एड्रेस यहीं ब्लॉक!
+        return; // ⛔ अधूरा ऑर्डर यहीं ब्लॉक! ग्रुप में न फोटो जाएगी, न ही एड्रेस जाएगा।
       }
     }
 
-    // सादी फोटो या सही एड्रेस बिना किसी रुकावट के कतार में जाएगा
-    if (!msg.photo && !msg.video && cleanText.length < 10 && cleanText !== "") {
-      try {
-        await bot.sendMessage(adminGroupId, `📝: ${escapeHTML(cleanText)}`, { parse_mode: 'HTML' });
-      } catch (e) { console.error("Direct Text Error:", e.message); }
+    // केस: सादा टेक्स्ट मैसेज (बिना फोटो के) - सीधे बिना किसी चेकिंग के तुरंत ग्रुप में जाएगा
+    if (!msg.photo && !msg.video) {
+      if (cleanText !== "") {
+        try {
+          await bot.sendMessage(adminGroupId, `👤 ${escapeHTML(resellerName)} (ID: ${chatId})\n📝: ${escapeHTML(cleanText)}`, { parse_mode: 'HTML' });
+        } catch (e) { console.error("Direct Text Error:", e.message); }
+      }
       return;
     }
 
+    // सादी फोटो या 100% सही एड्रेस सुरक्षित रूप से कतार में जमा होंगे:
     let currentSession = userSessions.get(chatId);
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [] };
@@ -354,8 +350,6 @@ bot.on('message', async (msg) => {
     } else if (msg.video) {
       const videoId = msg.video.file_id;
       currentSession.messages.push({ type: 'video', fileId: videoId, text: cleanText, originalMsgId: msg.message_id });
-    } else if (cleanText !== "") {
-      currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id });
     }
 
     currentSession.timeoutId = setTimeout(() => {
