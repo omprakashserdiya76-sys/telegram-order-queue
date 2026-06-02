@@ -6,15 +6,15 @@ const adminGroupId = process.env.ADMIN_GROUP_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर सर्वर को एक्टिव रखने के लिए
+// रेंडर वेब सर्वर स्टेबिलिटी के लिए
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active (Verified Final Mode)'); });
+const server = http.createServer((req, res) => { res.end('Engine Active (Absolute Perfect Final Mode)'); });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
 
-// HTML मोड में स्पेशल निशानों से क्रैश रोकने का सेफ्टी फंक्शन
+// HTML मोड के लिए सुरक्षित टेक्स्ट बनाने का फंक्शन
 function escapeHTML(text) {
   if (!text) return "";
   return text.toString()
@@ -23,7 +23,7 @@ function escapeHTML(text) {
     .replace(/>/g, "&gt;");
 }
 
-// --- नियम 1: रोजाना रात 12 बजे ग्रुप में फोटो जैसी रिपोर्ट भेजना और पर्सनल मैसेज भेजना ---
+// --- नियम 1: रोजाना रात 12 बजे फोटो जैसी पूरी लिस्ट ग्रुप में भेजना और पर्सनल मैसेज भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -31,7 +31,6 @@ function startDailyResetTimer() {
     
     if (indiaTime.getHours() === 0 && indiaTime.getMinutes() === 0) {
       if (resellerOrderCounts.size > 0) {
-        
         // बिल्कुल आपकी फोटो (1001503229.jpg) जैसा ग्रुप मैसेज फॉर्मेट
         let reportText = `📊 <b>Daily Orders Report (रात 12:00 बजे)</b> 📊\n`;
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
@@ -41,11 +40,10 @@ function startDailyResetTimer() {
           const rName = resellerNamesMap.get(userId) || "Reseller";
           const safeName = escapeHTML(rName);
           
-          // ग्रुप रिपोर्ट में रीसेलर का नाम, आईडी और आज के कुल आर्डर जोड़ना
           reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल ऑर्डर: <b>${count}</b>\n`;
           
           try {
-            // रीसेलर को पर्सनल चैट में समरी मैसेज भेजना (नियम के अनुसार)
+            // रीसेलर को पर्सनल समरी मैसेज
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
                                 `* जिन ऑर्डर्स का COD अमाउंट ₹3900 से अधिक है, उन पर ₹200 शिपिंग charge लगेगा।\n` +
                                 `* बाकी सभी ऑर्डर्स पर ₹100 शिपिंग charge लगेगा।\n` +
@@ -61,14 +59,12 @@ function startDailyResetTimer() {
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
         
-        // एडमिन ग्रुप में फाइनल लिस्ट डिलीवर करना
         try {
           await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'HTML' });
         } catch (err) {
           console.error("ग्रुप में रिपोर्ट भेजने में एरर:", err.message);
         }
         
-        // अगले दिन के लिए गिनती को वापस जीरो (Reset) करना
         resellerOrderCounts.clear();
         resellerNamesMap.clear();
       }
@@ -82,21 +78,33 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- नियम 2: शब्द-अंक की खिचड़ी से नंबर न निकालने वाला सुधरा हुआ एड्रेस डिटेक्टर ---
-function isRealAddressText(txt) {
-  if (!txt) return false;
-  const cleanTxt = txt.toString().trim();
-  if (cleanTxt.length < 20) return false; 
+// --- सुधरा हुआ एड्रेस डिटेक्टर (बोल्ड टेक्स्ट, स्पेस हटाना और खिचड़ी नंबरों से सुरक्षा) ---
+function checkAddressDetails(txt) {
+  if (!txt) return { isAddress: false, missing: 'both' };
   
-  // \b लगाने से बोट अक्षरों के बीच चिपके नंबर (जैसे 100पहले1700) को पूरी तरह छोड़ देगा
-  const hasValidPhone = /\b\d{9,12}\b/.test(cleanTxt); // साफ-साफ लिखा 9 से 12 अंकों का मोबाइल नंबर
-  const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);    // साफ-साफ लिखा 5 से 7 अंकों का पिनकोड
+  let cleanTxt = txt.toString().trim();
+  if (cleanTxt.length < 20) return { isAddress: false, missing: 'both' };
+
+  // स्पेस की बीमारी का पक्का इलाज: अंकों के बीच के स्पेस को बैकएंड में अस्थाई रूप से हटाना
+  // ताकि 93515 20621 को बोट 9351520621 पढ़ सके
+  let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
+
+  // \b लगाने से शब्दों के बीच फंसे नंबर (100पहले1700) पूरी तरह रिजेक्ट हो जाएंगे
+  const hasValidPhone = /\b\d{9,12}\b/.test(textForPhoneCheck); // 9 से 12 अंकों का साफ नंबर (+91 या 9 अंक दोनों पास)
+  const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);            // 5 से 7 अंकों का साफ पिनकोड
+
+  if (hasValidPhone && hasPinCode) {
+    return { isAddress: true, missing: 'none' };
+  } else if (hasValidPhone && !hasPinCode) {
+    return { isAddress: false, missing: 'pincode' };
+  } else if (!hasValidPhone && hasPinCode) {
+    return { isAddress: false, missing: 'phone' };
+  }
   
-  // दोनों में से कोई भी एक शुद्ध संख्या मिल जाए, तो वह असली एड्रेस है
-  return (hasValidPhone || hasPinCode);
+  return { isAddress: false, missing: 'both' };
 }
 
-// नियम 3: कतार इंजन (15 सेकंड लॉक - वीडियो, फोटो और बंडल सपोर्ट)
+// कतार इंजन (15 सेकंड लॉक - वीडियो, फोटो और बंडल सपोर्ट)
 async function processGlobalUserQueue() {
   if (globalUserQueue.length === 0) {
     isProcessingQueue = false;
@@ -115,14 +123,16 @@ async function processGlobalUserQueue() {
 
   for (const item of items) {
     if (item.type === 'photo' || item.type === 'video') {
-      if (isRealAddressText(item.text)) {
+      let check = checkAddressDetails(item.text);
+      if (check.isAddress) {
         item.isRealAddress = true;
         detectedAddresses.push(item);
       } else {
         currentOrderMedia.push(item);
       }
     } else if (item.type === 'text') {
-      if (isRealAddressText(item.text)) {
+      let check = checkAddressDetails(item.text);
+      if (check.isAddress) {
         item.isRealAddress = true;
         detectedAddresses.push(item);
       } else {
@@ -233,7 +243,6 @@ async function processGlobalUserQueue() {
     }
   }
 
-  // 15 सेकंड का लॉक इंजन जो गैप बनाकर रखता है
   setTimeout(processGlobalUserQueue, 15000);
 }
 
@@ -247,7 +256,7 @@ bot.on('message', async (msg) => {
   let text = msg.text || msg.caption || "";
   let cleanText = text.trim();
 
-  // --- नियम 4: एडमिन रिप्लाई रूट सिस्टम ---
+  // --- एडमिन रिप्लाई रूट सिस्टम ---
   if (chatId === adminGroupId && msg.reply_to_message) {
     const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
     const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -280,8 +289,32 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- नियम 5: रीसेलर साइड कतार कलेक्शन (25 सेकंड का होल्ड) ---
+  // --- रीसेलर साइड कतार कलेक्शन (25 सेकंड का होल्ड और ऑटो-रिजेक्शन अलर्ट) ---
   if (chatId !== adminGroupId) {
+    
+    // रीसेलर ने फोटो/वीडियो के साथ अधूरा एड्रेस भेजा तो तुरंत रिजेक्ट करके मेमोरी से डिलीट करना
+    if (msg.photo || msg.video) {
+      let addrCheck = checkAddressDetails(cleanText);
+      if (!addrCheck.isAddress && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone')) {
+        
+        let missingDetailHindi = addrCheck.missing === 'pincode' ? "पिनकोड (Pincode)" : "मोबाइल नंबर (Mobile Number)";
+        
+        let alertMsg = `⚠️ <b>आपके एड्रेस में ${missingDetailHindi} गायब या सही नहीं है!</b>\n\n` +
+                       `यह आपका ऑर्डर आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। यह मैसेज डिलीट कर दिया गया है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                       `🚨 <b>कृपया मोबाइल नंबर, पिनकोड और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
+                       `━━━━━━━━━━━━━━━━━━━━\n` +
+                       `💡 <i>यदि आपको ऑर्डर भेजने में कोई समस्या आ रही है या मदद की जरूरत है, तो आप मुझसे संपर्क कर सकते हैं:</i>\n\n` +
+                       `👤 <b>ओमप्रकाश</b>\n` +
+                       `📞 <code>9376535752</code>\n` +
+                       `💬 @Omprakash9950`;
+
+        try {
+          await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: msg.message_id });
+        } catch (e) { console.error("Alert Sent Error:", e.message); }
+        return; // सिस्टम मेमोरी से तुरंत डिलीट (डेटा कतार में नहीं जाएगा, यहीं से साफ)
+      }
+    }
+
     if (!msg.photo && !msg.video && cleanText.length < 10 && cleanText !== "") {
       try {
         await bot.sendMessage(adminGroupId, `📝: ${escapeHTML(cleanText)}`, { parse_mode: 'HTML' });
@@ -307,7 +340,6 @@ bot.on('message', async (msg) => {
       currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id });
     }
 
-    // 25 सेकंड का होल्ड टाइमर जो हर नए मैसेज पर रीसेट होता है
     currentSession.timeoutId = setTimeout(() => {
       const sessionToSend = userSessions.get(chatId);
       if (sessionToSend && sessionToSend.messages.length > 0) {
