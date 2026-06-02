@@ -8,7 +8,7 @@ const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर वेब सर्वर स्टेबिलिटी के लिए
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active - Perfect Strict Address Verification Mode'); });
+const server = http.createServer((req, res) => { res.end('Engine Active - Pure Fixed Verification Mode'); });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
@@ -70,16 +70,16 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- ⚙️ महा-सुधार: मोबाइल नंबर और पिनकोड की 100% सटीक जांच प्रणाली ---
+// --- एड्रेस डिटेक्टर (मोबाइल नंबर और पिनकोड की सटीक जांच प्रणाली) ---
 function checkAddressDetails(txt) {
   if (!txt) return { isAddress: false, missing: 'both' };
   
   let cleanTxt = txt.toString().trim();
   
-  // अगर कोई छोटा-मोटा टेक्स्ट है तो उसे एड्रेस नहीं मानेंगे
+  // अगर कोई बहुत छोटा टेक्स्ट है तो उसे एड्रेस नहीं मानेंगे और उस पर कोई अलर्ट नहीं देंगे
   if (cleanTxt.length < 15) return { isAddress: false, missing: 'none' };
 
-  // मोबाइल नंबर के बीच के स्पेस को साफ करना (जैसे: 93515 20621 को एक करना)
+  // मोबाइल नंबर के बीच के स्पेस को साफ़ करना (जैसे: 93515 20621 को एक करना)
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
   // भारतीय मोबाइल नंबर (9 से 12 अंक) की सटीक जांच
@@ -278,25 +278,25 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- रीसेलर साइड सख्त फ़िल्टर सुरक्षा ---
+  // --- रीसेलर साइड फ़िल्टर और सख्त सुरक्षा दीवार ---
   if (chatId !== adminGroupId) {
     
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
       
-      // शर्त 2 & 3: अगर एड्रेस में गड़बड़ी है, तो उसे एडमिन ग्रुप में जाने से यहीं तुरंत रोकना
-      if (!addrCheck.isAddress && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone' || addrCheck.missing === 'both')) {
+      // 💡 महा-सुधार: अलर्ट सिर्फ और सिर्फ तभी जाएगा जब एड्रेस गलत (isAddress: false) होगा 
+      // और पिनकोड या मोबाइल नंबर वाकई में गायब होगा!
+      if (addrCheck.isAddress === false && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone' || addrCheck.missing === 'both')) {
         
         let dynamicReason = "";
         if (addrCheck.missing === 'pincode') {
           dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) मौजूद नहीं है!</b>`;
         } else if (addrCheck.missing === 'phone') {
           dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर (Mobile Number) मौजूद नहीं है!</b>`;
-        } else {
+        } else if (addrCheck.missing === 'both') {
           dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों मौजूद नहीं हैं!</b>`;
         }
         
-        // शर्त 1: रीसेलर का भेजा गया एड्रेस नीचे साफ़-साफ़ हाईलाइट (शो) होना चाहिए
         let alertMsg = `${dynamicReason}\n\n` +
                        `यह आपका ऑर्डर आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही ऑर्डर स्वीकार किया जाएगा।\n\n` +
                        `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
@@ -309,7 +309,6 @@ bot.on('message', async (msg) => {
                        `💬 @Omprakash9950`;
 
         try {
-          // रीсеलर को सीधे उसी की फोटो के साथ अलर्ट डिलीवर करना
           if (msg.photo) {
             const photoId = msg.photo[msg.photo.length - 1].file_id;
             await bot.sendPhoto(chatId, photoId, { caption: alertMsg, parse_mode: 'HTML' });
@@ -319,10 +318,12 @@ bot.on('message', async (msg) => {
           }
         } catch (e) { console.error("Alert Sender Failed:", e.message); }
         
-        // यहाँ से सीधा 'return' यानी यह खराब मैसेज कतार (Memory Queue) में नहीं जाएगा और एडमिन ग्रुप में कभी नहीं पहुँचेगा!
-        return; 
+        return; // अधूरा ऑर्डर यहीं ब्लॉक, आगे नहीं जाएगा!
       }
     }
+
+    // अगर ऊपर की कंडीशन मैच नहीं हुई, तो इसका मतलब एड्रेस या तो बिल्कुल सही है या सादा टेक्स्ट है।
+    // अब यह सुरक्षित रूप से आपके पुराने कतार सिस्टम (Queue) में जमा होगा:
 
     if (!msg.photo && !msg.video && cleanText.length < 10 && cleanText !== "") {
       try {
