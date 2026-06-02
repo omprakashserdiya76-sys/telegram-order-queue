@@ -8,7 +8,7 @@ const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर वेब सर्वर स्टेबिलिटी के लिए
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active - Ultimate Fixed Mode'); });
+const server = http.createServer((req, res) => { res.end('Engine Active - Absolute Fix Mode'); });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
@@ -70,17 +70,16 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- बोल्ड टेक्स्ट और स्पेस की बीमारी को खत्म करने वाला एड्रेस डिटेक्टर ---
+// --- एड्रेस डिटेक्टर (स्पेस हटाना और 9-12 अंकों की रेंज) ---
 function checkAddressDetails(txt) {
   if (!txt) return { isAddress: false, missing: 'both' };
   
   let cleanTxt = txt.toString().trim();
   if (cleanTxt.length < 20) return { isAddress: false, missing: 'both' };
 
-  // मोबाइल नंबर के बीच के स्पेस को हटाना ताकि 93515 20621 को बोट एक साथ पढ़ सके
+  // मोबाइल नंबर के बीच के स्पेस को हटाना ताकि बोट नंबर को एक साथ पढ़ सके
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
-  // \b लगाने से अक्षरों के बीच फंसे खिचड़ी नंबर रिजेक्ट हो जाएंगे
   const hasValidPhone = /\b\d{9,12}\b/.test(textForPhoneCheck);
   const hasPinCode = /\b\d{5,7}\b/.test(cleanTxt);
 
@@ -241,9 +240,7 @@ bot.on('message', async (msg) => {
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   if (!resellerName) resellerName = "Reseller";
 
-  // --- बोल्ड/इटैलिक स्टाइल हटाकर शुद्ध टेक्स्ट निकालना ---
-  let rawText = msg.text || msg.caption || "";
-  let cleanText = rawText.trim();
+  let cleanText = (msg.text || msg.caption || "").trim();
 
   // एडमिन रिप्लाई रूट सिस्टम
   if (chatId === adminGroupId && msg.reply_to_message) {
@@ -279,12 +276,16 @@ bot.on('message', async (msg) => {
   // --- रीसेलर साइड कलेक्शन और तुरंत रिजेक्शन अलर्ट ---
   if (chatId !== adminGroupId) {
     
-    // अगर फोटो या वीडियो के साथ अधूरा एड्रेस है तो तुरंत अलर्ट भेजकर यहीं से डिलीट (रिटर्न) करना
+    // 💡 महा-सुधार: कतार (Session) में डालने से पहले ही अधूरे एड्रेस को तुरंत रिजेक्ट करना
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
-      if (!addrCheck.isAddress && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone')) {
+      
+      // अगर टेक्स्ट एड्रेस जैसा है (लंबाई 20 से ज्यादा) लेकिन पिनकोड या फोन गायब है
+      if (!addrCheck.isAddress && (addrCheck.missing === 'pincode' || addrCheck.missing === 'phone' || addrCheck.missing === 'both')) {
         
-        let missingDetailHindi = addrCheck.missing === 'pincode' ? "पिनकोड (Pincode)" : "मोबाइल नंबर (Mobile Number)";
+        let missingDetailHindi = "पिनकोड या मोबाइल नंबर";
+        if (addrCheck.missing === 'pincode') missingDetailHindi = "पिनकोड (Pincode)";
+        if (addrCheck.missing === 'phone') missingDetailHindi = "मोबाइल नंबर (Mobile Number)";
         
         let alertMsg = `⚠️ <b>आपके एड्रेस में ${missingDetailHindi} गायब या सही नहीं है!</b>\n\n` +
                        `यह आपका आदेश आगे पैकिंग के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं या गायब है। यह मैसेज डिलीट कर दिया गया है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तो ही आदेश स्वीकार किया जाएगा।\n\n` +
@@ -298,7 +299,7 @@ bot.on('message', async (msg) => {
         try {
           await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: msg.message_id });
         } catch (e) { console.error("Alert Sender Failed:", e.message); }
-        return; // कतार में डेटा नहीं जाएगा, यहीं से साफ (तुरंत डिलीट)
+        return; // यहीं से पूरी तरह साफ, आगे कतार में नहीं जाएगा!
       }
     }
 
