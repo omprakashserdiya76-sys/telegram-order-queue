@@ -6,9 +6,11 @@ const adminGroupId = process.env.ADMIN_GROUP_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर वेब सर्वर स्टेबिलिटी के लिए
+// रेंडर वेब सर्वर स्टेबिलिटी के लिए (लाइन नंबर 20 एरर पूरी तरह फिक्स)
 const port = process.env.PORT || 10000;
-const server = http.createServer((req, res) => { res.end('Engine Active - Strict Product Photo Safe Mode'); });
+const server = http.createServer((req, res) => { 
+  res.end('Engine Active - Pure Fixed Safe Mode'); 
+});
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
@@ -16,7 +18,10 @@ let resellerNamesMap = new Map();
 
 function escapeHTML(text) {
   if (!text) return "";
-  return text.toString().replace(//g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text.toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 // --- रोजाना रात 12 बजे ग्रुप में पूरी रिपोर्ट और पर्सनल मैसेज भेजना ---
@@ -70,21 +75,21 @@ let globalUserQueue = [];
 let isProcessingQueue = false;
 const adminToResellerMsgMap = new Map();
 
-// --- ⚙️ महा-सुधार: मोबाइल नंबर और पिनकोड की 100% सटीक जांच प्रणाली ---
+// --- मोबाइल नंबर और पिनकोड की 100% सटीक जांच प्रणाली ---
 function checkAddressDetails(txt) {
-  // अगर कोई टेक्स्ट लिखा ही नहीं है, तो यह एड्रेस नहीं है (यह सादी प्रोडक्ट की फोटो है)
+  // अगर कोई टेक्स्ट लिखा ही नहीं है या खाली है, तो यह सादी प्रोडक्ट फोटो है (अलर्ट नहीं देना है)
   if (!txt || txt.toString().trim() === "") {
     return { isAddress: false, missing: 'none', isPlainMedia: true };
   }
   
   let cleanTxt = txt.toString().trim();
   
-  // अगर लिखा गया टेक्स्ट 15 अक्षरों से छोटा है, तो भी इसे अधूरा एड्रेस नहीं बल्कि सादा विवरण मानेंगे
+  // अगर लिखा गया टेक्स्ट 15 अक्षरों से छोटा है, तो भी इसे सादा विवरण मानेंगे (कोई अलर्ट नहीं)
   if (cleanTxt.length < 15) {
     return { isAddress: false, missing: 'none', isPlainMedia: true };
   }
 
-  // मोबाइल नंबर के बीच के स्पेस को साफ़ करना (जैसे: 93515 20621 को एक करना)
+  // मोबाइल नंबर के बीच के स्पेस को साफ़ करना
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)\s+(?=\d)/g, "");
 
   // भारतीय मोबाइल नंबर (10 से 12 अंक) की सटीक जांच
@@ -284,13 +289,13 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // --- रीसेलर साइड फ़िल्टर और सख्त सुरक्षा दीवार ---
+  // --- रीसेलर साइड फ़िल्टर सुरक्षा दीवार ---
   if (chatId !== adminGroupId) {
     
     if (msg.photo || msg.video) {
       let addrCheck = checkAddressDetails(cleanText);
       
-      // 💡 महा-सुधार: अगर यह सादी मीडिया/फोटो है (isPlainMedia: true), तो बोट अलर्ट बिल्कुल नहीं देगा!
+      // केवल तभी अलर्ट भेजेंगे जब यह सादी फोटो न हो और एड्रेस वाकई अधूरा हो
       if (!addrCheck.isPlainMedia && addrCheck.isAddress === false) {
         
         let dynamicReason = "";
@@ -327,7 +332,7 @@ bot.on('message', async (msg) => {
       }
     }
 
-    // अगर फोटो सादी है या एड्रेस 100% सही है, तो वो कतार (Queue) में जमा होगी और ग्रुप में जाएगी:
+    // सादी फोटो या सही एड्रेस बिना किसी रुकावट के कतार में जाएगा
     if (!msg.photo && !msg.video && cleanText.length < 10 && cleanText !== "") {
       try {
         await bot.sendMessage(adminGroupId, `📝: ${escapeHTML(cleanText)}`, { parse_mode: 'HTML' });
