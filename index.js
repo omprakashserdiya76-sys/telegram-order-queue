@@ -9,15 +9,32 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Exact Reply Mapping Mode'); 
+  res.end('Engine Active - Omprakash Ji Checked 30-Min Production Mode'); 
 });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
+let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट लॉक के लिए
 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
+
+// स्टाइलिश/बोल्ड गणितीय नंबरों को नॉर्मल 0-9 में बदलने वाला क्लीनर इंजन
+function normalizeStylisedText(text) {
+  if (!text) return "";
+  let str = text.toString();
+  
+  const stylishNumbers = {
+    '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
+    '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟺': '4', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟾': '8', '𝟿': '9',
+    '⓪': '0', '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5', '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9',
+    '🄀': '0', '⒈': '1', '⒉': '2', '⒊': '3', '⒋': '4', '⒌': '5', '⒍': '6', '⒎': '7', '⒏': '8', '⒐': '9',
+    '⓿': '0', '❶': '1', '❷': '2', '❸': '3', '❹': '4', '❺': '5', '❻': '6', '❼': '7', '❽': '8', '❾': '9'
+  };
+
+  return str.split('').map(char => stylishNumbers[char] || char).join('');
+}
 
 function escapeHTML(text) {
   if (!text) return "";
@@ -27,7 +44,7 @@ function escapeHTML(text) {
     .replace(/>/g, "&gt;");
 }
 
-// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट भेजना ---
+// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट और पर्सनल मैसेज भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -42,7 +59,7 @@ function startDailyResetTimer() {
         for (const [userId, count] of resellerOrderCounts.entries()) {
           const rName = resellerNamesMap.get(userId) || "Reseller";
           const safeName = escapeHTML(rName);
-          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल ऑर्डर: <b>${count}</b>\n`;
+          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल आदेश: <b>${count}</b>\n`;
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -76,18 +93,19 @@ startDailyResetTimer();
 const userSessions = new Map();
 const adminToResellerMsgMap = new Map();
 
-// --- ⚙️ एड्रेस डिटेक्टर इंजन ---
+// --- ⚙️ एड्रेस डिटेक्टर इंजन (फॉन्ट क्लीनर के साथ) ---
 function checkAddressDetails(txt) {
   if (!txt || txt.toString().trim() === "") {
-    return { isAddress: false, missing: 'none', isPlainMedia: true };
+    return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
   }
   
-  let cleanTxt = txt.toString().trim();
+  let cleanTxt = normalizeStylisedText(txt).trim();
   
   if (cleanTxt.length < 35) {
-    return { isAddress: false, missing: 'none', isPlainMedia: true };
+    return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: cleanTxt };
   }
 
+  // शुद्ध मोबाइल नंबर ढूंढना
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, ""); 
   const phoneRegex = /(?:(?:\+|0{0,2})91[\s-]*)?([6-9]\d{9})\b|(?<!\d)(\d{10,12})(?!\d)/g;
   
@@ -113,6 +131,7 @@ function checkAddressDetails(txt) {
     }
   }
 
+  // पिनकोड खोजना (6 अंक)
   let cleanTextForPin = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, "");
   const exactPinMatch = cleanTextForPin.match(/(?<!\d)\d{6}(?!\d)/g);
   const badPinMatch = cleanTextForPin.match(/(?<!\d)\d{5}(?!\d)|(?<!\d)\d{7}(?!\d)/g);
@@ -120,18 +139,20 @@ function checkAddressDetails(txt) {
   let hasPinCode = exactPinMatch !== null && exactPinMatch.length > 0;
   let isPinIncorrect = !hasPinCode && (badPinMatch !== null && badPinMatch.length > 0);
 
+  let fingerprint = "";
   if (hasValidPhone && hasPinCode) {
-    return { isAddress: true, missing: 'none', isPlainMedia: false };
+    fingerprint = `${phoneMatches[0]}_${exactPinMatch[0]}`;
+    return { isAddress: true, missing: 'none', isPlainMedia: false, cleanText: cleanTxt, fingerprint: fingerprint };
   } else if (hasValidPhone && (!hasPinCode || isPinIncorrect)) {
-    return { isAddress: false, missing: 'pincode', isPlainMedia: false };
+    return { isAddress: false, missing: 'pincode', isPlainMedia: false, cleanText: cleanTxt };
   } else if ((!hasValidPhone || isPhoneIncomplete) && hasPinCode) {
-    return { isAddress: false, missing: 'phone', isPlainMedia: false };
+    return { isAddress: false, missing: 'phone', isPlainMedia: false, cleanText: cleanTxt };
   }
   
-  return { isAddress: false, missing: 'both', isPlainMedia: false };
+  return { isAddress: false, missing: 'both', isPlainMedia: false, cleanText: cleanTxt };
 }
 
-// --- 📦 कतार Processing इंजन ---
+// --- 📦 कतार प्रोसेसिंग इंजन ---
 async function processUserSession(chatId) {
   const session = userSessions.get(chatId);
   if (!session || session.messages.length === 0) return;
@@ -141,7 +162,6 @@ async function processUserSession(chatId) {
 
   resellerNamesMap.set(userId, resellerName);
 
-  // 🚨 सुरक्षा लॉक: सबसे पहले पूरे बंडल का टेक्स्ट मिलाकर चेक करना
   let entireBundleText = "";
   let sampleMsgId = messages[0].originalMsgId;
   for (const m of messages) {
@@ -164,53 +184,115 @@ async function processUserSession(chatId) {
       }
       
       let alertMsg = `${dynamicReason}\n\n` +
-                     `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                     `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                      `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
-                     `<code>${escapeHTML(entireBundleText)}</code>\n\n` +
+                     `<code>${escapeHTML(globalCheck.cleanText)}</code>\n\n` +
                      `🚨 <b>कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
                      `━━━━━━━━━━━━━━━━━━━━\n` +
-                     `👤 <b>ओमप्रकाश</b> | 📞 <code>9376535752</code>`;
+                     `👤 <b>ओमप्रकाश</b>\n` +
+                     `📞 <code>9376535752</code>\n` +
+                     `✈️ @Omprakash9950`;
 
       try {
         await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
       } catch (e) { console.error("Alert Sender Failed:", e.message); }
       return; 
     }
+
+    // 🚨 30 मिनट डुप्लीकेट ऑर्डर लॉक पहरा 🚨
+    if (globalCheck.isAddress && globalCheck.fingerprint) {
+      const lockKey = `${userId}_${globalCheck.fingerprint}`;
+      if (recentOrdersMap.has(lockKey)) {
+        let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
+                       `अगर सच में आपका ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
+                       `━━━━━━━━━━━━━━━━━━━━\n` +
+                       `👤 <b>ओमप्रकाश</b>\n` +
+                       `📞 <code>9376535752</code>\n` +
+                       `✈️ @Omprakash9950`;
+        try {
+          await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
+        } catch (e) { console.error("Duplicate Alert Failed:", e.message); }
+        return; 
+      } else {
+        // पूरे 30 मिनट (30 * 60 * 1000 = 1,800,000 मिलीसेकंड) के लिए लॉक लगाना
+        recentOrdersMap.set(lockKey, true);
+        setTimeout(() => { recentOrdersMap.delete(lockKey); }, 30 * 60 * 1000);
+      }
+    }
   }
 
-  // पास होने पर ऑर्डर्स को अलग-अलग टुकड़ों में बांटना
+  // --- टाइम-प्रॉक्सिमिटी स्मार्ट सेपरेटर (सटीक जोड़ा बनाना) ---
   let separatedOrders = [];
 
   for (const m of messages) {
     if (m.type === 'photo' || m.type === 'video') {
       let addrCheck = checkAddressDetails(m.text);
-      if (m.text && m.text.trim().length >= 35) {
+      if (m.text && m.text.trim().length >= 35 && addrCheck.isAddress) {
         separatedOrders.push({
-          text: m.text.trim(),
+          text: addrCheck.cleanText,
           media: [m],
-          addrCheck: addrCheck,
-          originalMsgId: m.originalMsgId // 💡 असली एड्रेस मैसेज आईडी को स्टोर रखना
+          timestamp: m.timestamp,
+          originalMsgId: m.originalMsgId,
+          isRealOrder: true
         });
       } else {
-        if (separatedOrders.length > 0) {
-          separatedOrders[separatedOrders.length - 1].media.push(m);
+        let nearestTextMsg = null;
+        let minDiff = Infinity;
+
+        for (const tMsg of messages) {
+          if (tMsg.type === 'text') {
+            let tCheck = checkAddressDetails(tMsg.text);
+            if (tCheck.isAddress) {
+              let diff = Math.abs(m.timestamp - tMsg.timestamp);
+              if (diff < minDiff) {
+                minDiff = diff;
+                nearestTextMsg = tMsg;
+              }
+            }
+          }
+        }
+
+        if (nearestTextMsg) {
+          let tCheck = checkAddressDetails(nearestTextMsg.text);
+          let existingOrder = separatedOrders.find(o => o.text === tCheck.cleanText);
+          if (existingOrder) {
+            existingOrder.media.push(m);
+          } else {
+            separatedOrders.push({
+              text: tCheck.cleanText,
+              media: [m],
+              timestamp: nearestTextMsg.timestamp,
+              originalMsgId: nearestTextMsg.originalMsgId,
+              isRealOrder: true
+            });
+          }
         } else {
-          separatedOrders.push({
-            text: "",
-            media: [m],
-            addrCheck: addrCheck,
-            originalMsgId: m.originalMsgId
-          });
+          if (separatedOrders.length > 0) {
+            separatedOrders[separatedOrders.length - 1].media.push(m);
+          } else {
+            separatedOrders.push({
+              text: "",
+              media: [m],
+              timestamp: m.timestamp,
+              originalMsgId: m.originalMsgId,
+              isRealOrder: false
+            });
+          }
         }
       }
     } else if (m.type === 'text') {
       let addrCheck = checkAddressDetails(m.text);
-      separatedOrders.push({
-        text: m.text.trim(),
-        media: [],
-        addrCheck: addrCheck,
-        originalMsgId: m.originalMsgId
-      });
+      let isAlreadyIncluded = separatedOrders.some(o => o.text === addrCheck.cleanText);
+      
+      if (!isAlreadyIncluded) {
+        separatedOrders.push({
+          text: addrCheck.cleanText,
+          media: [],
+          timestamp: m.timestamp,
+          originalMsgId: m.originalMsgId,
+          isRealOrder: addrCheck.isAddress
+        });
+      }
     }
   }
 
@@ -226,7 +308,7 @@ async function processUserSession(chatId) {
   triggerQueueProcessor();
 }
 
-// 15 सेकंड का गैप लूप
+// 15 सेकंड ग्रुप गैप लूप
 async function triggerQueueProcessor() {
   if (isProcessingQueue || globalDeliveryQueue.length === 0) return;
   isProcessingQueue = true;
@@ -243,10 +325,10 @@ async function triggerQueueProcessor() {
   isProcessingQueue = false;
 }
 
-// एडमिन ग्रुप में सटीक डिलीवरी फंक्शन
+// एडमिन ग्रुप डिलीवरी इंजन
 async function deliverOrderToAdminGroup(task) {
   const { userId, resellerName, orderData, messagesContext } = task;
-  const { text: combinedText, media: mediaItems, addrCheck, originalMsgId: orderOriginalMsgId } = orderData;
+  const { text: combinedText, media: mediaItems, isRealOrder: initialRealCheck, originalMsgId: orderOriginalMsgId } = orderData;
   const safeResellerName = escapeHTML(resellerName);
   
   let sampleMsgId = orderOriginalMsgId || (mediaItems.length > 0 ? mediaItems[0].originalMsgId : messagesContext[0].originalMsgId);
@@ -254,7 +336,8 @@ async function deliverOrderToAdminGroup(task) {
   let assignedOrderNumStr = null;
   let isRealOrder = false;
 
-  if (combinedText.length >= 35 && checkAddressDetails(combinedText).isAddress) {
+  let finalCheck = checkAddressDetails(combinedText);
+  if (combinedText.length >= 35 && finalCheck.isAddress) {
     isRealOrder = true;
     let currentCount = resellerOrderCounts.get(userId) || 0;
     currentCount++;
@@ -268,6 +351,14 @@ async function deliverOrderToAdminGroup(task) {
     assignedOrderNumStr = `${namePart}${idPart}-${currentCount.toString().padStart(3, '0')}`;
   }
 
+  // Anti-Duplicate Safe Guard: सादे टेक्स्ट को दोबारा छपने से रोकना
+  if (mediaItems.length === 0 && initialRealCheck && !isRealOrder) {
+    return; 
+  }
+  if (mediaItems.length === 0 && combinedText.length >= 35 && finalCheck.isAddress && !isRealOrder) {
+    return; 
+  }
+
   let groupHeaderMsgId = null;
   if (isRealOrder) {
     try {
@@ -275,7 +366,6 @@ async function deliverOrderToAdminGroup(task) {
       let sentHeader = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'HTML' });
       if (sentHeader) {
         groupHeaderMsgId = sentHeader.message_id.toString();
-        // 💡 100% पक्का सुधार: ग्रुप के एड्रेस हेडर को सीधे रीसेलर के एड्रेस मैसेज आईडी से लिंक करना
         adminToResellerMsgMap.set(groupHeaderMsgId, sampleMsgId.toString());
       }
     } catch (e) { console.error("Header Send Error:", e.message); }
@@ -301,13 +391,12 @@ async function deliverOrderToAdminGroup(task) {
       if (sentMedia && !isRealOrder) {
         adminToResellerMsgMap.set(sentMedia.message_id.toString(), mediaItem.originalMsgId.toString());
       } else if (sentMedia && isRealOrder && groupHeaderMsgId) {
-        // 💡 सुधार: अगर असली ऑर्डर है, तो फोटो पर होने वाले रिप्लाई को भी रीसेलर के एड्रेस मैसेज पर ही रूट करना
         adminToResellerMsgMap.set(sentMedia.message_id.toString(), sampleMsgId.toString());
       }
     } catch (e) { console.error("Media Send Error:", e.message); }
   }
 
-  if (mediaItems.length === 0 && combinedText !== "") {
+  if (mediaItems.length === 0 && combinedText !== "" && !isRealOrder) {
     try {
       let normalText = `👤 ${safeResellerName} (ID: ${userId})\n📝: ${escapeHTML(combinedText)}`;
       let sentTxt = await bot.sendMessage(adminGroupId, normalText, { parse_mode: 'HTML' });
@@ -333,6 +422,7 @@ bot.on('message', async (msg) => {
   if (!resellerName) resellerName = "Reseller";
 
   let cleanText = (msg.text || msg.caption || "").trim();
+  let currentTimestamp = msg.date;
 
   // एडमिन रिप्लाई रूट सिस्टम
   if (chatId === adminGroupId && msg.reply_to_message) {
@@ -365,7 +455,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // रीसेलर साइड - बंडलिंग सुरक्षा प्रणाली
+  // रीसेलर साइड - बंडलिंग सुरक्षा प्रणाली (25 सेकंड होल्ड)
   if (chatId !== adminGroupId) {
     let currentSession = userSessions.get(chatId);
     if (!currentSession) {
@@ -377,17 +467,16 @@ bot.on('message', async (msg) => {
 
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
-      currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, originalMsgId: msg.message_id });
+      currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
     } else if (msg.video) {
       const videoId = msg.video.file_id;
-      currentSession.messages.push({ type: 'video', fileId: videoId, text: cleanText, originalMsgId: msg.message_id });
+      currentSession.messages.push({ type: 'video', fileId: videoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
     } else if (cleanText !== "") {
-      currentSession.messages.push({ type: 'text', text: cleanText, originalMsgId: msg.message_id });
+      currentSession.messages.push({ type: 'text', text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
     }
 
-    // ⏱️ रीसेलर लॉक टाइमर पूरे 25 सेकंड (25000ms)
     currentSession.timeoutId = setTimeout(() => {
       processUserSession(chatId);
-    }, 25000);
+    }, 25000); 
   }
 });
