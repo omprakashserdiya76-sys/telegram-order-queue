@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Checked 30-Min Production Mode'); 
+  res.end('Engine Active - Omprakash Ji Production Buttons Ultimate Mode v2'); 
 });
 server.listen(port);
 
@@ -19,6 +19,10 @@ let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट 
 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
+
+// रीसेलर्स के चालू ऑर्डर सेशन को संभालने के लिए (बटन सिस्टम मेमोरी)
+const userSessions = new Map();
+const adminToResellerMsgMap = new Map();
 
 // स्टाइलिश/बोल्ड गणितीय नंबरों को नॉर्मल 0-9 में बदलने वाला क्लीनर इंजन
 function normalizeStylisedText(text) {
@@ -44,7 +48,27 @@ function escapeHTML(text) {
     .replace(/>/g, "&gt;");
 }
 
-// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट और पर्सनल मैसेज भेजना ---
+// --- कीबोर्ड बटन्स टेम्पलेट्स ---
+const mainMenuKeyboard = {
+  reply_markup: {
+    keyboard: [[{ text: "🟢 नया ऑर्डर भेजें" }]],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  }
+};
+
+const sessionMenuKeyboard = {
+  reply_markup: {
+    keyboard: [
+      [{ text: "🔴 ऑर्डर पूरा हुआ" }],
+      [{ text: "❌ ऑर्डर रद्द करें / Cancel" }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
+  }
+};
+
+// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट (शब्द सुधार) और पर्सनल मैसेज भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -59,7 +83,7 @@ function startDailyResetTimer() {
         for (const [userId, count] of resellerOrderCounts.entries()) {
           const rName = resellerNamesMap.get(userId) || "Reseller";
           const safeName = escapeHTML(rName);
-          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल आदेश: <b>${count}</b>\n`;
+          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल <b>ऑर्डर</b>: <b>${count}</b>\n`;
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -90,10 +114,7 @@ function startDailyResetTimer() {
 }
 startDailyResetTimer();
 
-const userSessions = new Map();
-const adminToResellerMsgMap = new Map();
-
-// --- ⚙️ एड्रेस डिटेक्टर इंजन (फॉन्ट क्लीनर के साथ) ---
+// --- ⚙️ एड्रेस डिटेक्टर इंजन (मल्टी-नंबर और क्वांटिटी प्रोटेक्शन) ---
 function checkAddressDetails(txt) {
   if (!txt || txt.toString().trim() === "") {
     return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
@@ -117,7 +138,9 @@ function checkAddressDetails(txt) {
       if (rawNum.startsWith('91') && rawNum.length > 10) {
         rawNum = rawNum.substring(2);
       }
-      phoneMatches.push(rawNum);
+      if (rawNum.length === 10) {
+        phoneMatches.push(rawNum);
+      }
     }
   }
 
@@ -131,7 +154,7 @@ function checkAddressDetails(txt) {
     }
   }
 
-  // पिनकोड खोजना (6 अंक)
+  // पिनकोड खोजना (स्वतंत्र 6 अंकों का नंबर)
   let cleanTextForPin = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, "");
   const exactPinMatch = cleanTextForPin.match(/(?<!\d)\d{6}(?!\d)/g);
   const badPinMatch = cleanTextForPin.match(/(?<!\d)\d{5}(?!\d)|(?<!\d)\d{7}(?!\d)/g);
@@ -152,15 +175,15 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both', isPlainMedia: false, cleanText: cleanTxt };
 }
 
-// --- 📦 कतार प्रोसेसिंग इंजन ---
-async function processUserSession(chatId) {
+// --- 📦 फाइनल कतार प्रोसेसिंग इंजन (बटन दबाने पर चालू होने वाला) ---
+async function processFinalOrder(chatId) {
   const session = userSessions.get(chatId);
-  if (!session || session.messages.length === 0) return;
+  if (!session || session.messages.length === 0) {
+    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया '🟢 नया ऑर्डर भेजें' दबाकर शुरुआत करें।", mainMenuKeyboard);
+    return;
+  }
 
   const { userId, resellerName, messages } = session;
-  userSessions.delete(chatId); 
-
-  resellerNamesMap.set(userId, resellerName);
 
   let entireBundleText = "";
   let sampleMsgId = messages[0].originalMsgId;
@@ -170,60 +193,61 @@ async function processUserSession(chatId) {
   entireBundleText = entireBundleText.trim();
 
   let hasAnyMedia = messages.some(m => m.type === 'photo' || m.type === 'video');
-  if (hasAnyMedia && entireBundleText.length >= 35) {
-    let globalCheck = checkAddressDetails(entireBundleText);
+  
+  // वैलिडेशन चेक
+  let globalCheck = checkAddressDetails(entireBundleText);
+  if (globalCheck.isAddress === false) {
+    let dynamicReason = "";
+    if (globalCheck.missing === 'pincode') {
+      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत (जैसे 5 अंक का) है!</b>`;
+    } else if (globalCheck.missing === 'phone') {
+      dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा (जैसे 9 अंक का) है!</b>`;
+    } else if (globalCheck.missing === 'both' || globalCheck.isPlainMedia) {
+      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`;
+    }
     
-    if (globalCheck.isAddress === false) {
-      let dynamicReason = "";
-      if (globalCheck.missing === 'pincode') {
-        dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत (जैसे 5 अंक का) है!</b>`;
-      } else if (globalCheck.missing === 'phone') {
-        dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा (जैसे 9 अंक का) है!</b>`;
-      } else if (globalCheck.missing === 'both') {
-        dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`;
-      }
-      
-      let alertMsg = `${dynamicReason}\n\n` +
-                     `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
-                     `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
-                     `<code>${escapeHTML(globalCheck.cleanText)}</code>\n\n` +
-                     `🚨 <b>कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
+    let alertMsg = `${dynamicReason}\n\n` +
+                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                   `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
+                   `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस टेक्स्ट नहीं मिला")}</code>\n\n` +
+                   `🚨 <b>कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
+                   `━━━━━━━━━━━━━━━━━━━━\n` +
+                   `👤 <b>ओमप्रकाश</b>\n` +
+                   `📞 <code>9376535752</code>\n` +
+                   `✈️ @Omprakash9950`;
+
+    try {
+      await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
+    } catch (e) { console.error("Alert Sender Failed:", e.message); }
+    return; // सेशन बंद नहीं होगा ताकि रीसेलर एडिट कर सके या सुधार सके
+  }
+
+  // 30 मिनट डुप्लीकेट ऑर्डर लॉक पहरा
+  if (globalCheck.isAddress && globalCheck.fingerprint) {
+    const lockKey = `${userId}_${globalCheck.fingerprint}`;
+    if (recentOrdersMap.has(lockKey)) {
+      let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
+                     `अगर सच में आपका ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
                      `━━━━━━━━━━━━━━━━━━━━\n` +
                      `👤 <b>ओमप्रकाश</b>\n` +
                      `📞 <code>9376535752</code>\n` +
                      `✈️ @Omprakash9950`;
-
       try {
-        await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
-      } catch (e) { console.error("Alert Sender Failed:", e.message); }
+        await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
+      } catch (e) { console.error("Duplicate Alert Failed:", e.message); }
       return; 
-    }
-
-    // 🚨 30 मिनट डुप्लीकेट ऑर्डर लॉक पहरा 🚨
-    if (globalCheck.isAddress && globalCheck.fingerprint) {
-      const lockKey = `${userId}_${globalCheck.fingerprint}`;
-      if (recentOrdersMap.has(lockKey)) {
-        let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
-                       `अगर सच में आपका ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
-                       `━━━━━━━━━━━━━━━━━━━━\n` +
-                       `👤 <b>ओमप्रकाश</b>\n` +
-                       `📞 <code>9376535752</code>\n` +
-                       `✈️ @Omprakash9950`;
-        try {
-          await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
-        } catch (e) { console.error("Duplicate Alert Failed:", e.message); }
-        return; 
-      } else {
-        // पूरे 30 मिनट (30 * 60 * 1000 = 1,800,000 मिलीसेकंड) के लिए लॉक लगाना
-        recentOrdersMap.set(lockKey, true);
-        setTimeout(() => { recentOrdersMap.delete(lockKey); }, 30 * 60 * 1000);
-      }
+    } else {
+      recentOrdersMap.set(lockKey, true);
+      setTimeout(() => { recentOrdersMap.delete(lockKey); }, 30 * 60 * 1000);
     }
   }
 
-  // --- टाइम-प्रॉक्सिमिटी स्मार्ट सेपरेटर (सटीक जोड़ा बनाना) ---
-  let separatedOrders = [];
+  // सफलतापूर्वक पास होने पर सेशन क्लियर करें और रीसेलर नेम मैप करें
+  userSessions.delete(chatId);
+  resellerNamesMap.set(userId, resellerName);
 
+  // स्मार्ट सेपरेटर (जोड़ा बनाना)
+  let separatedOrders = [];
   for (const m of messages) {
     if (m.type === 'photo' || m.type === 'video') {
       let addrCheck = checkAddressDetails(m.text);
@@ -305,10 +329,13 @@ async function processUserSession(chatId) {
     });
   }
 
+  // रीसेलर को सफलता का संदेश और वापस होम कीबोर्ड देना
+  await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और पैकिंग टीम को भेज दिया गया है!", mainMenuKeyboard);
+
   triggerQueueProcessor();
 }
 
-// 15 सेकंड ग्रुप गैप लूप
+// 2 अलग ऑर्डर्स के बीच 15 सेकंड का गैप रखने वाला इंजन
 async function triggerQueueProcessor() {
   if (isProcessingQueue || globalDeliveryQueue.length === 0) return;
   isProcessingQueue = true;
@@ -351,13 +378,8 @@ async function deliverOrderToAdminGroup(task) {
     assignedOrderNumStr = `${namePart}${idPart}-${currentCount.toString().padStart(3, '0')}`;
   }
 
-  // Anti-Duplicate Safe Guard: सादे टेक्स्ट को दोबारा छपने से रोकना
-  if (mediaItems.length === 0 && initialRealCheck && !isRealOrder) {
-    return; 
-  }
-  if (mediaItems.length === 0 && combinedText.length >= 35 && finalCheck.isAddress && !isRealOrder) {
-    return; 
-  }
+  if (mediaItems.length === 0 && initialRealCheck && !isRealOrder) return; 
+  if (mediaItems.length === 0 && combinedText.length >= 35 && finalCheck.isAddress && !isRealOrder) return; 
 
   let groupHeaderMsgId = null;
   if (isRealOrder) {
@@ -413,8 +435,8 @@ async function deliverOrderToAdminGroup(task) {
   }
 }
 
-// --- टेलीग्राम संदेश नियंत्रक ---
-bot.on('message', async (msg) => {
+// --- टेलीग्राम संदेश एवं एडिट नियंत्रक इंजन ---
+function handleIncomingMessage(msg, isEdited = false) {
   if (!msg.chat || !msg.from) return;
 
   const chatId = msg.chat.id.toString();
@@ -424,8 +446,8 @@ bot.on('message', async (msg) => {
   let cleanText = (msg.text || msg.caption || "").trim();
   let currentTimestamp = msg.date;
 
-  // एडमिन रिप्लाई रूट सिस्टम
-  if (chatId === adminGroupId && msg.reply_to_message) {
+  // एडमिन ग्रुप रिप्लाई रूट सिस्टम (ग्रुप टू पर्सनल)
+  if (chatId === adminGroupId && msg.reply_to_message && !isEdited) {
     const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
     const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
     
@@ -439,32 +461,63 @@ bot.on('message', async (msg) => {
 
       if (msg.photo) {
         const photoId = msg.photo[msg.photo.length - 1].file_id;
-        await bot.sendPhoto(targetId, photoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
+        bot.sendPhoto(targetId, photoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
         return;
       }
       if (msg.video) {
         const videoId = msg.video.file_id;
-        await bot.sendVideo(targetId, videoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
+        bot.sendVideo(targetId, videoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
         return;
       }
       if (msg.text) {
-        await bot.sendMessage(targetId, cleanText, replyOptions);
+        bot.sendMessage(targetId, cleanText, replyOptions);
         return;
       }
     }
     return;
   }
 
-  // रीसेलर साइड - बंडलिंग सुरक्षा प्रणाली (25 सेकंड होल्ड)
+  // रीसेलर साइड (निजी चैट बटन सिस्टम नियंत्रण)
   if (chatId !== adminGroupId) {
+    // 🚫 स्टिकर ब्लॉकर पहरा - स्टिकर आते ही उसे सेव न करके तुरंत ख़त्म करना
+    if (msg.sticker) return;
+
     let currentSession = userSessions.get(chatId);
-    if (!currentSession) {
-      currentSession = { userId: chatId, resellerName: resellerName, messages: [], timeoutId: null };
-      userSessions.set(chatId, currentSession);
+
+    // बटन कमांड चेक
+    if (cleanText === "🟢 नया ऑर्डर भेजें") {
+      userSessions.set(chatId, { userId: chatId, resellerName: resellerName, messages: [] });
+      bot.sendMessage(chatId, "📥 **ऑर्डर मोड चालू हो गया है!**\n\nअब आप बिना किसी समय की पाबंदी के तसल्ली से अपना पूरा एड्रेस और प्रोडक्ट की फोटो/वीडियो भेजें।\n\nसब कुछ भेजने के बाद नीचे दिए गए **'🔴 ऑर्डर पूरा हुआ'** बटन पर क्लिक करें।", sessionMenuKeyboard);
+      return;
     }
 
-    if (currentSession.timeoutId) clearTimeout(currentSession.timeoutId);
+    if (cleanText === "❌ ऑर्डर रद्द करें / Cancel") {
+      userSessions.delete(chatId); // 🧹 मेमोरी से पूरा डेटा जड़ से डिलीट
+      bot.sendMessage(chatId, "🔴 <b>आपका ऑर्डर सफलतापूर्वक कैंसल (रद्द) हो गया है!</b>\n\n🔄 नया ऑर्डर फिर से भेजने के लिए कृपया नीचे दिए गए <b>'🟢 नया ऑर्डर भेजें'</b> बटन पर क्लिक करें।", { parse_mode: 'HTML', ...mainMenuKeyboard });
+      return;
+    }
 
+    if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
+      processFinalOrder(chatId);
+      return;
+    }
+
+    // अगर कोई रीसेलर बिना बटन दबाए सीधा माल भेजता है
+    if (!currentSession) {
+      bot.sendMessage(chatId, "⚠️ कृपया ऑर्डर भेजने के लिए पहले नीचे दिए गए **'🟢 नया ऑर्डर भेजें'** बटन पर क्लिक करें!", mainMenuKeyboard);
+      return;
+    }
+
+    // एडिटेड मैसेज को संभालने का विशेष लॉजिक
+    if (isEdited) {
+      let existingMsgIdx = currentSession.messages.findIndex(m => m.originalMsgId === msg.message_id);
+      if (existingMsgIdx !== -1) {
+        currentSession.messages[existingMsgIdx].text = cleanText;
+      }
+      return;
+    }
+
+    // सामान्य रूप से कतार में स्टोर करना
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
       currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
@@ -474,9 +527,15 @@ bot.on('message', async (msg) => {
     } else if (cleanText !== "") {
       currentSession.messages.push({ type: 'text', text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
     }
-
-    currentSession.timeoutId = setTimeout(() => {
-      processUserSession(chatId);
-    }, 25000); 
   }
+}
+
+// नए मैसेज के लिए लिसनर
+bot.on('message', (msg) => {
+  handleIncomingMessage(msg, false);
+});
+
+// सुधारे गए (Edited) मैसेज के लिए लिसनर
+bot.on('edited_message', (msg) => {
+  handleIncomingMessage(msg, true);
 });
