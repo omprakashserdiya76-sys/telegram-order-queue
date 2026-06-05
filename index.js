@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Production Final Ultimate Mode v3'); 
+  res.end('Engine Active - Omprakash Ji Ultimate Master Production Mode v4'); 
 });
 server.listen(port);
 
@@ -114,7 +114,7 @@ function startDailyResetTimer() {
 }
 startDailyResetTimer();
 
-// --- ⚙️ एड्रेस डिटेक्टर इंजन (2 मोबाइल नंबर और मकान नंबर से बिल्कुल सुरक्षित और अचूक फिल्टर) ---
+// --- ⚙️ सुधरा हुआ अचूक एड्रेस डिटेक्टर इंजन (मकान नंबर और 2 मोबाइल नंबर से सुरक्षित) ---
 function checkAddressDetails(txt) {
   if (!txt || txt.toString().trim() === "") {
     return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
@@ -126,14 +126,14 @@ function checkAddressDetails(txt) {
     return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: cleanTxt };
   }
 
-  // शुद्ध मोबाइल नंबर ढूंढना: जो केवल लगातार 10 अंकों का हो और 6-9 से शुरू हो
-  // यह मकान नंबर (252, 14, 3/4) या पैसों के हिसाब (1000-100) को बिल्कुल छोड़ देगा
-  let textForPhoneCheck = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, ""); 
+  // शुद्ध मोबाइल नंबर ढूंढना: जो स्वतंत्र रूप से लगातार 10 अंकों का हो और 6-9 से शुरू हो
+  // यह मकान नंबर (3/4, 252/14A) या पैसों के हिसाब को पूरी तरह अनदेखा कर देगा
   const phoneRegex = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
-  
   let phoneMatches = [];
   let match;
-  while ((match = phoneRegex.exec(textForPhoneCheck)) !== null) {
+  
+  // बिना स्पेस-डैश हटाए सीधे शुद्ध 10 अंकों को खोजना ताकि मकान नंबर से टकराव न हो
+  while ((match = phoneRegex.exec(cleanTxt)) !== null) {
     let rawNum = match[0];
     if (rawNum.startsWith('91') && rawNum.length > 10) {
       rawNum = rawNum.substring(2);
@@ -143,28 +143,44 @@ function checkAddressDetails(txt) {
     }
   }
 
-  // 1 नंबर हो या 2 अलग-अलग मोबाइल नंबर हों, दोनों ही हालत में पास माना जाएगा
+  // यदि सीधे नहीं मिला, तो एक बार सुरक्षित क्लीनिंग करके चेक करना (डैश हटाने पर)
+  if (phoneMatches.length === 0) {
+    let secondaryTxt = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, "");
+    let secondMatch;
+    const phoneRegexSec = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
+    while ((secondMatch = phoneRegexSec.exec(secondaryTxt)) !== null) {
+      let rawNum = secondMatch[0];
+      if (rawNum.startsWith('91') && rawNum.length > 10) {
+        rawNum = rawNum.substring(2);
+      }
+      if (rawNum.length === 10 && !phoneMatches.includes(rawNum)) {
+        phoneMatches.push(rawNum);
+      }
+    }
+  }
+
+  // 1 शुद्ध नंबर हो या 2 अलग-अलग शुद्ध मोबाइल नंबर हों, बोट इसे परफेक्ट पास मानेगा
   let hasValidPhone = phoneMatches.length > 0;
   let isPhoneIncomplete = false;
 
+  // केवल तभी अधूरा मानेंगे जब पूरे एड्रेस में एक भी सही 10 अंकों का नंबर न हो और कोई 7-9 अंकों की गलत सीरीज हो
   if (!hasValidPhone) {
-    let fallbackDigits = textForPhoneCheck.match(/(?<!\d)[6-9]\d{5,8}(?!\d)/g);
+    let fallbackDigits = cleanTxt.match(/(?<!\d)[6-9]\d{5,8}(?!\d)/g);
     if (fallbackDigits && fallbackDigits.some(d => d.length === 9 || d.length === 7 || d.length === 8)) {
       isPhoneIncomplete = true;
     }
   }
 
   // पिनकोड खोजना (सिर्फ शुद्ध 6 अंकों का स्वतंत्र नंबर)
-  let cleanTextForPin = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, "");
-  const exactPinMatch = cleanTextForPin.match(/(?<!\d)\d{6}(?!\d)/g);
-  const badPinMatch = cleanTextForPin.match(/(?<!\d)\d{5}(?!\d)|(?<!\d)\d{7}(?!\d)/g);
+  const exactPinMatch = cleanTxt.match(/(?<!\d)\d{6}(?!\d)/g);
+  const badPinMatch = cleanTxt.match(/(?<!\d)\d{5}(?!\d)|(?<!\d)\d{7}(?!\d)/g);
 
   let hasPinCode = exactPinMatch !== null && exactPinMatch.length > 0;
   let isPinIncorrect = !hasPinCode && (badPinMatch !== null && badPinMatch.length > 0);
 
   let fingerprint = "";
   if (hasValidPhone && hasPinCode) {
-    // डुप्लीकेट चेक के लिए पहले नंबर और पहले पिनकोड का इस्तेमाल करेंगे
+    // डुप्लीकेट लॉक के लिए पहले सही नंबर और पिनकोड का जोड़ा बनाना
     fingerprint = `${phoneMatches[0]}_${exactPinMatch[0]}`;
     return { isAddress: true, missing: 'none', isPlainMedia: false, cleanText: cleanTxt, fingerprint: fingerprint };
   } else if (hasValidPhone && (!hasPinCode || isPinIncorrect)) {
@@ -180,7 +196,7 @@ function checkAddressDetails(txt) {
 async function processFinalOrder(chatId) {
   const session = userSessions.get(chatId);
   if (!session || session.messages.length === 0) {
-    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया '🟢 नया आदेश भेजें' दबाकर शुरुआत करें।", mainMenuKeyboard);
+    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया '🟢 नया ऑर्डर भेजें' दबाकर शुरुआत करें।", mainMenuKeyboard);
     return;
   }
 
@@ -200,7 +216,7 @@ async function processFinalOrder(chatId) {
     if (globalCheck.missing === 'pincode') {
       dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत है!</b>`;
     } else if (globalCheck.missing === 'phone') {
-      dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा (जैसे 9 अंक का) है!</b>`;
+      dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>`;
     } else if (globalCheck.missing === 'both' || globalCheck.isPlainMedia) {
       dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`;
     }
@@ -481,14 +497,14 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId !== adminGroupId) {
     
     // 🛡️ सख्त स्टिकर एवं प्रीमियम कस्टम इमोजी ब्लॉकर पहरा
-    if (msg.sticker) return; // साधारण स्टिकर ब्लॉक
+    if (msg.sticker) return; // साधारण बड़े स्टिकर ब्लॉक
 
-    // टेलीग्राम प्रीमियम कस्टम इमोजी / एनिमेटेड टिक्स को मैसेज के अंदर से ही फिल्टर करके उड़ाना
+    // टेलीग्राम प्रीमियम कस्टम इमोजी (जैसे बड़ा हरा टिक सिंबल) आते ही संदेश को जड़ से गायब करना
     if (msg.entities || msg.caption_entities) {
       const targetEntities = msg.entities || msg.caption_entities;
       const hasCustomEmoji = targetEntities.some(ent => ent.type === 'custom_emoji');
       if (hasCustomEmoji) {
-        return; // एनिमेटेड कस्टम इमोजी आते ही यहीं ख़त्म करना (ग्रुप में नहीं जाएगा)
+        return; // हरा टिक मार्क आते ही यहीं रोक देगा, मेमोरी में भी सेव नहीं करेगा
       }
     }
 
@@ -502,7 +518,7 @@ function handleIncomingMessage(msg, isEdited = false) {
     }
 
     if (cleanText === "❌ ऑर्डर रद्द करें / Cancel") {
-      userSessions.delete(chatId); // 🧹 मेमोरी से पूरा डेटा तुरंत क्लियर
+      userSessions.delete(chatId); // 🧹 मेमोरी से पूरा पुराना डेटा तुरंत क्लियर
       bot.sendMessage(chatId, "🔴 <b>आपका ऑर्डर सफलतापूर्वक कैंसल (रद्द) हो गया है!</b>\n\n🔄 नया ऑर्डर फिर से भेजने के लिए कृपया नीचे दिए गए <b>'🟢 नया ऑर्डर भेजें'</b> बटन पर क्लिक करें।", { parse_mode: 'HTML', ...mainMenuKeyboard });
       return;
     }
