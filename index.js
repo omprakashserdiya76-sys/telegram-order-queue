@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Production Buttons Ultimate Mode v2'); 
+  res.end('Engine Active - Omprakash Ji Production Final Master Mode'); 
 });
 server.listen(port);
 
@@ -30,7 +30,11 @@ function normalizeStylisedText(text) {
   let str = text.toString();
   
   const stylishNumbers = {
-    '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
+    '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '🄱': '5', '🟲': '6', '🞶': '7', '🞷': '8', '🞸': '9',
+    '🟹': '0', '🟺': '1', '🟻': '2', '🟼': '3', '🟽': '4', '🟾': '5', '🟿': '6', '🠀': '7', '🠁': '8', '🠂': '9',
+    '🗰': '0', '🗱': '1', '🗲': '2', '🗳': '3', '🗴': '4', '🗵': '5', '🗶': '6', '🗷': '7', '🗸': '8', '🗹': '9',
+    '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
+    '🜀': '0', '🜁': '1', '🜂': '2', '🜃': '3', '🜄': '4', '🜅': '5', '🜆': '6', '🜇': '7', '🜈': '8', '🜉': '9',
     '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟺': '4', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟾': '8', '𝟿': '9',
     '⓪': '0', '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5', '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9',
     '🄀': '0', '⒈': '1', '⒉': '2', '⒊': '3', '⒋': '4', '⒌': '5', '⒍': '6', '⒎': '7', '⒏': '8', '⒐': '9',
@@ -114,7 +118,7 @@ function startDailyResetTimer() {
 }
 startDailyResetTimer();
 
-// --- ⚙️ एड्रेस डिटेक्टर इंजन (मल्टी-नंबर और क्वांटिटी प्रोटेक्शन) ---
+// --- ⚙️ एड्रेस डिटेक्टर इंजन (मकान नंबर, हिसाब और क्वांटिटी से सुरक्षित शुद्ध फिल्टर) ---
 function checkAddressDetails(txt) {
   if (!txt || txt.toString().trim() === "") {
     return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
@@ -126,21 +130,20 @@ function checkAddressDetails(txt) {
     return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: cleanTxt };
   }
 
-  // शुद्ध मोबाइल नंबर ढूंढना
+  // शुद्ध मोबाइल नंबर ढूंढना: जो केवल लगातार 10 अंकों का हो और 6-9 से शुरू हो
+  // यह मकान नंबर (252, 14) या हिसाब (1000-100) को पूरी तरह छोड़ देगा
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, ""); 
-  const phoneRegex = /(?:(?:\+|0{0,2})91[\s-]*)?([6-9]\d{9})\b|(?<!\d)(\d{10,12})(?!\d)/g;
+  const phoneRegex = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
   
   let phoneMatches = [];
   let match;
   while ((match = phoneRegex.exec(textForPhoneCheck)) !== null) {
-    let rawNum = match[1] || match[2];
-    if (rawNum) {
-      if (rawNum.startsWith('91') && rawNum.length > 10) {
-        rawNum = rawNum.substring(2);
-      }
-      if (rawNum.length === 10) {
-        phoneMatches.push(rawNum);
-      }
+    let rawNum = match[0];
+    if (rawNum.startsWith('91') && rawNum.length > 10) {
+      rawNum = rawNum.substring(2);
+    }
+    if (rawNum.length === 10) {
+      phoneMatches.push(rawNum);
     }
   }
 
@@ -148,13 +151,13 @@ function checkAddressDetails(txt) {
   let isPhoneIncomplete = false;
 
   if (!hasValidPhone) {
-    let fallbackDigits = textForPhoneCheck.match(/\b\d{6,9}\b/g);
+    let fallbackDigits = textForPhoneCheck.match(/(?<!\d)[6-9]\d{5,8}(?!\d)/g);
     if (fallbackDigits && fallbackDigits.some(d => d.length === 9 || d.length === 7 || d.length === 8)) {
       isPhoneIncomplete = true;
     }
   }
 
-  // पिनकोड खोजना (स्वतंत्र 6 अंकों का नंबर)
+  // पिनकोड खोजना (सिर्फ शुद्ध 6 अंकों का स्वतंत्र नंबर)
   let cleanTextForPin = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, "");
   const exactPinMatch = cleanTextForPin.match(/(?<!\d)\d{6}(?!\d)/g);
   const badPinMatch = cleanTextForPin.match(/(?<!\d)\d{5}(?!\d)|(?<!\d)\d{7}(?!\d)/g);
@@ -175,7 +178,7 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both', isPlainMedia: false, cleanText: cleanTxt };
 }
 
-// --- 📦 फाइनल कतार प्रोसेसिंग इंजन (बटन दबाने पर चालू होने वाला) ---
+// --- 📦 कतार प्रोसेसिंग इंजन (बटन दबाने पर चालू होने वाला) ---
 async function processFinalOrder(chatId) {
   const session = userSessions.get(chatId);
   if (!session || session.messages.length === 0) {
@@ -192,14 +195,12 @@ async function processFinalOrder(chatId) {
   }
   entireBundleText = entireBundleText.trim();
 
-  let hasAnyMedia = messages.some(m => m.type === 'photo' || m.type === 'video');
-  
   // वैलिडेशन चेक
   let globalCheck = checkAddressDetails(entireBundleText);
   if (globalCheck.isAddress === false) {
     let dynamicReason = "";
     if (globalCheck.missing === 'pincode') {
-      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत (जैसे 5 अंक का) है!</b>`;
+      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत है!</b>`;
     } else if (globalCheck.missing === 'phone') {
       dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा (जैसे 9 अंक का) है!</b>`;
     } else if (globalCheck.missing === 'both' || globalCheck.isPlainMedia) {
@@ -219,10 +220,10 @@ async function processFinalOrder(chatId) {
     try {
       await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
     } catch (e) { console.error("Alert Sender Failed:", e.message); }
-    return; // सेशन बंद नहीं होगा ताकि रीसेलर एडिट कर सके या सुधार सके
+    return; 
   }
 
-  // 30 मिनट डुप्लीकेट ऑर्डर लॉक पहरा
+  // 30 मिनट डुप्लीकेट ऑर्डर锁 पहरा
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
@@ -335,7 +336,7 @@ async function processFinalOrder(chatId) {
   triggerQueueProcessor();
 }
 
-// 2 अलग ऑर्डर्स के बीच 15 सेकंड का गैप रखने वाला इंजन
+// ⚠️ प्रत्येक अलग ऑर्डर के बीच पूरे 15 सेकंड का गैप रखने वाला इंजन ⚠️
 async function triggerQueueProcessor() {
   if (isProcessingQueue || globalDeliveryQueue.length === 0) return;
   isProcessingQueue = true;
@@ -344,6 +345,7 @@ async function triggerQueueProcessor() {
     const currentTask = globalDeliveryQueue.shift();
     await deliverOrderToAdminGroup(currentTask);
 
+    // यदि कतार में और भी ऑर्डर्स बचे हैं, तो पूरे 15 सेकंड (15000ms) का कड़ा विराम लें
     if (globalDeliveryQueue.length > 0) {
       await new Promise(resolve => setTimeout(resolve, 15000)); 
     }
@@ -479,7 +481,7 @@ function handleIncomingMessage(msg, isEdited = false) {
 
   // रीसेलर साइड (निजी चैट बटन सिस्टम नियंत्रण)
   if (chatId !== adminGroupId) {
-    // 🚫 स्टिकर ब्लॉकर पहरा - स्टिकर आते ही उसे सेव न करके तुरंत ख़त्म करना
+    // 🚫 स्टिकर ब्लॉकर पहरा - स्टिकर को ग्रुप में जाने से रोकना (यहीं ख़त्म करना)
     if (msg.sticker) return;
 
     let currentSession = userSessions.get(chatId);
@@ -492,7 +494,7 @@ function handleIncomingMessage(msg, isEdited = false) {
     }
 
     if (cleanText === "❌ ऑर्डर रद्द करें / Cancel") {
-      userSessions.delete(chatId); // 🧹 मेमोरी से पूरा डेटा जड़ से डिलीट
+      userSessions.delete(chatId); // 🧹 मेमोरी से पूरा डेटा तुरंत क्लियर
       bot.sendMessage(chatId, "🔴 <b>आपका ऑर्डर सफलतापूर्वक कैंसल (रद्द) हो गया है!</b>\n\n🔄 नया ऑर्डर फिर से भेजने के लिए कृपया नीचे दिए गए <b>'🟢 नया ऑर्डर भेजें'</b> बटन पर क्लिक करें।", { parse_mode: 'HTML', ...mainMenuKeyboard });
       return;
     }
