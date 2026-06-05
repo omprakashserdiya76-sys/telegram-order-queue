@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Ultimate Master Production Mode v4'); 
+  res.end('Engine Active - Omprakash Ji Ultimate Auto-Reset Production Mode v5'); 
 });
 server.listen(port);
 
@@ -127,12 +127,10 @@ function checkAddressDetails(txt) {
   }
 
   // शुद्ध मोबाइल नंबर ढूंढना: जो स्वतंत्र रूप से लगातार 10 अंकों का हो और 6-9 से शुरू हो
-  // यह मकान नंबर (3/4, 252/14A) या पैसों के हिसाब को पूरी तरह अनदेखा कर देगा
   const phoneRegex = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
   let phoneMatches = [];
   let match;
   
-  // बिना स्पेस-डैश हटाए सीधे शुद्ध 10 अंकों को खोजना ताकि मकान नंबर से टकराव न हो
   while ((match = phoneRegex.exec(cleanTxt)) !== null) {
     let rawNum = match[0];
     if (rawNum.startsWith('91') && rawNum.length > 10) {
@@ -143,7 +141,6 @@ function checkAddressDetails(txt) {
     }
   }
 
-  // यदि सीधे नहीं मिला, तो एक बार सुरक्षित क्लीनिंग करके चेक करना (डैश हटाने पर)
   if (phoneMatches.length === 0) {
     let secondaryTxt = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, "");
     let secondMatch;
@@ -159,11 +156,9 @@ function checkAddressDetails(txt) {
     }
   }
 
-  // 1 शुद्ध नंबर हो या 2 अलग-अलग शुद्ध मोबाइल नंबर हों, बोट इसे परफेक्ट पास मानेगा
   let hasValidPhone = phoneMatches.length > 0;
   let isPhoneIncomplete = false;
 
-  // केवल तभी अधूरा मानेंगे जब पूरे एड्रेस में एक भी सही 10 अंकों का नंबर न हो और कोई 7-9 अंकों की गलत सीरीज हो
   if (!hasValidPhone) {
     let fallbackDigits = cleanTxt.match(/(?<!\d)[6-9]\d{5,8}(?!\d)/g);
     if (fallbackDigits && fallbackDigits.some(d => d.length === 9 || d.length === 7 || d.length === 8)) {
@@ -180,7 +175,6 @@ function checkAddressDetails(txt) {
 
   let fingerprint = "";
   if (hasValidPhone && hasPinCode) {
-    // डुप्लीकेट लॉक के लिए पहले सही नंबर और पिनकोड का जोड़ा बनाना
     fingerprint = `${phoneMatches[0]}_${exactPinMatch[0]}`;
     return { isAddress: true, missing: 'none', isPlainMedia: false, cleanText: cleanTxt, fingerprint: fingerprint };
   } else if (hasValidPhone && (!hasPinCode || isPinIncorrect)) {
@@ -212,6 +206,8 @@ async function processFinalOrder(chatId) {
   // वैलिडेशन चेक
   let globalCheck = checkAddressDetails(entireBundleText);
   if (globalCheck.isAddress === false) {
+    userSessions.delete(chatId); // 🔄 एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करना
+    
     let dynamicReason = "";
     if (globalCheck.missing === 'pincode') {
       dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत है!</b>`;
@@ -225,14 +221,14 @@ async function processFinalOrder(chatId) {
                    `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस टेक्स्ट नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
+                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। कृपया नीचे दिए गए '🟢 नया ऑर्डर भेजें' बटन पर क्लिक करके मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <code>9376535752</code>\n` +
                    `✈️ @Omprakash9950`;
 
     try {
-      await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
+      await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', ...mainMenuKeyboard });
     } catch (e) { console.error("Alert Sender Failed:", e.message); }
     return; 
   }
@@ -241,14 +237,17 @@ async function processFinalOrder(chatId) {
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
+      userSessions.delete(chatId); // 🔄 डुप्लीकेट एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करना
+      
       let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
-                     `अगर सच में आपका ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
+                     `अगर सच में आपका नया ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
+                     `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। नया ऑर्डर लगाने के लिए नीचे दिए गए '🟢 नया ऑर्डर भेजें' बटन पर क्लिक करें।</b>\n\n` +
                      `━━━━━━━━━━━━━━━━━━━━\n` +
                      `👤 <b>ओमप्रकाश</b>\n` +
                      `📞 <code>9376535752</code>\n` +
                      `✈️ @Omprakash9950`;
       try {
-        await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', reply_to_message_id: sampleMsgId });
+        await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', ...mainMenuKeyboard });
       } catch (e) { console.error("Duplicate Alert Failed:", e.message); }
       return; 
     } else {
@@ -344,9 +343,7 @@ async function processFinalOrder(chatId) {
     });
   }
 
-  // रीसेलर को सफलता का संदेश और वापस होम कीबोर्ड देना
   await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और पैकिंग टीम को भेज दिया गया है!", mainMenuKeyboard);
-
   triggerQueueProcessor();
 }
 
@@ -359,7 +356,6 @@ async function triggerQueueProcessor() {
     const currentTask = globalDeliveryQueue.shift();
     await deliverOrderToAdminGroup(currentTask);
 
-    // यदि कतार में और भी ऑर्डर्स बचे हैं, तो पूरे 15 सेकंड (15000ms) का कड़ा विराम लें
     if (globalDeliveryQueue.length > 0) {
       await new Promise(resolve => setTimeout(resolve, 15000)); 
     }
@@ -497,14 +493,14 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId !== adminGroupId) {
     
     // 🛡️ सख्त स्टिकर एवं प्रीमियम कस्टम इमोजी ब्लॉकर पहरा
-    if (msg.sticker) return; // साधारण बड़े स्टिकर ब्लॉक
+    if (msg.sticker) return; 
 
-    // टेलीग्राम प्रीमियम कस्टम इमोजी (जैसे बड़ा हरा टिक सिंबल) आते ही संदेश को जड़ से गायब करना
+    // टेलीग्राम प्रीमियम कस्टम इमोजी / एनिमेटेड टिक आते ही संदेश को यही तुरंत कचरा मानकर उड़ाना
     if (msg.entities || msg.caption_entities) {
       const targetEntities = msg.entities || msg.caption_entities;
       const hasCustomEmoji = targetEntities.some(ent => ent.type === 'custom_emoji');
       if (hasCustomEmoji) {
-        return; // हरा टिक मार्क आते ही यहीं रोक देगा, मेमोरी में भी सेव नहीं करेगा
+        return; // बोट मेमोरी में भी स्टोर नहीं करेगा, सीधे ड्राप कर देगा
       }
     }
 
@@ -518,7 +514,7 @@ function handleIncomingMessage(msg, isEdited = false) {
     }
 
     if (cleanText === "❌ ऑर्डर रद्द करें / Cancel") {
-      userSessions.delete(chatId); // 🧹 मेमोरी से पूरा पुराना डेटा तुरंत क्लियर
+      userSessions.delete(chatId); // 🧹 मेमोरी से तुरंत डेटा क्लियर
       bot.sendMessage(chatId, "🔴 <b>आपका ऑर्डर सफलतापूर्वक कैंसल (रद्द) हो गया है!</b>\n\n🔄 नया ऑर्डर फिर से भेजने के लिए कृपया नीचे दिए गए <b>'🟢 नया ऑर्डर भेजें'</b> बटन पर क्लिक करें।", { parse_mode: 'HTML', ...mainMenuKeyboard });
       return;
     }
@@ -528,13 +524,11 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // अगर कोई रीसेलर बिना बटन दबाए सीधा माल भेजता है
     if (!currentSession) {
       bot.sendMessage(chatId, "⚠️ कृपया ऑर्डर भेजने के लिए पहले नीचे दिए गए **'🟢 नया ऑर्डर भेजें'** बटन पर क्लिक करें!", mainMenuKeyboard);
       return;
     }
 
-    // एडिटेड मैसेज को संभालने का विशेष लॉजिक
     if (isEdited) {
       let existingMsgIdx = currentSession.messages.findIndex(m => m.originalMsgId === msg.message_id);
       if (existingMsgIdx !== -1) {
@@ -543,7 +537,6 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // सामान्य रूप से कतार में स्टोर करना
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
       currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
@@ -556,12 +549,10 @@ function handleIncomingMessage(msg, isEdited = false) {
   }
 }
 
-// नए मैसेज के लिए लिसनर
 bot.on('message', (msg) => {
   handleIncomingMessage(msg, false);
 });
 
-// सुधारे गए (Edited) मैसेज के लिए लिसनर
 bot.on('edited_message', (msg) => {
   handleIncomingMessage(msg, true);
 });
