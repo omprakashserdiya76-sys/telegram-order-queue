@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Production Final Master Mode'); 
+  res.end('Engine Active - Omprakash Ji Production Final Ultimate Mode v3'); 
 });
 server.listen(port);
 
@@ -30,11 +30,7 @@ function normalizeStylisedText(text) {
   let str = text.toString();
   
   const stylishNumbers = {
-    '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '🄱': '5', '🟲': '6', '🞶': '7', '🞷': '8', '🞸': '9',
-    '🟹': '0', '🟺': '1', '🟻': '2', '🟼': '3', '🟽': '4', '🟾': '5', '🟿': '6', '🠀': '7', '🠁': '8', '🠂': '9',
-    '🗰': '0', '🗱': '1', '🗲': '2', '🗳': '3', '🗴': '4', '🗵': '5', '🗶': '6', '🗷': '7', '🗸': '8', '🗹': '9',
-    '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
-    '🜀': '0', '🜁': '1', '🜂': '2', '🜃': '3', '🜄': '4', '🜅': '5', '🜆': '6', '🜇': '7', '🜈': '8', '🜉': '9',
+    '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
     '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟺': '4', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟾': '8', '𝟿': '9',
     '⓪': '0', '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5', '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9',
     '🄀': '0', '⒈': '1', '⒉': '2', '⒊': '3', '⒋': '4', '⒌': '5', '⒍': '6', '⒎': '7', '⒏': '8', '⒐': '9',
@@ -118,7 +114,7 @@ function startDailyResetTimer() {
 }
 startDailyResetTimer();
 
-// --- ⚙️ एड्रेस डिटेक्टर इंजन (मकान नंबर, हिसाब और क्वांटिटी से सुरक्षित शुद्ध फिल्टर) ---
+// --- ⚙️ एड्रेस डिटेक्टर इंजन (2 मोबाइल नंबर और मकान नंबर से बिल्कुल सुरक्षित और अचूक फिल्टर) ---
 function checkAddressDetails(txt) {
   if (!txt || txt.toString().trim() === "") {
     return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
@@ -131,7 +127,7 @@ function checkAddressDetails(txt) {
   }
 
   // शुद्ध मोबाइल नंबर ढूंढना: जो केवल लगातार 10 अंकों का हो और 6-9 से शुरू हो
-  // यह मकान नंबर (252, 14) या हिसाब (1000-100) को पूरी तरह छोड़ देगा
+  // यह मकान नंबर (252, 14, 3/4) या पैसों के हिसाब (1000-100) को बिल्कुल छोड़ देगा
   let textForPhoneCheck = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, ""); 
   const phoneRegex = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
   
@@ -147,6 +143,7 @@ function checkAddressDetails(txt) {
     }
   }
 
+  // 1 नंबर हो या 2 अलग-अलग मोबाइल नंबर हों, दोनों ही हालत में पास माना जाएगा
   let hasValidPhone = phoneMatches.length > 0;
   let isPhoneIncomplete = false;
 
@@ -167,6 +164,7 @@ function checkAddressDetails(txt) {
 
   let fingerprint = "";
   if (hasValidPhone && hasPinCode) {
+    // डुप्लीकेट चेक के लिए पहले नंबर और पहले पिनकोड का इस्तेमाल करेंगे
     fingerprint = `${phoneMatches[0]}_${exactPinMatch[0]}`;
     return { isAddress: true, missing: 'none', isPlainMedia: false, cleanText: cleanTxt, fingerprint: fingerprint };
   } else if (hasValidPhone && (!hasPinCode || isPinIncorrect)) {
@@ -182,7 +180,7 @@ function checkAddressDetails(txt) {
 async function processFinalOrder(chatId) {
   const session = userSessions.get(chatId);
   if (!session || session.messages.length === 0) {
-    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया '🟢 नया ऑर्डर भेजें' दबाकर शुरुआत करें।", mainMenuKeyboard);
+    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया '🟢 नया आदेश भेजें' दबाकर शुरुआत करें।", mainMenuKeyboard);
     return;
   }
 
@@ -223,7 +221,7 @@ async function processFinalOrder(chatId) {
     return; 
   }
 
-  // 30 मिनट डुप्लीकेट ऑर्डर锁 पहरा
+  // 30 मिनट डुप्लीकेट ऑर्डर लॉक पहरा
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
@@ -481,8 +479,18 @@ function handleIncomingMessage(msg, isEdited = false) {
 
   // रीसेलर साइड (निजी चैट बटन सिस्टम नियंत्रण)
   if (chatId !== adminGroupId) {
-    // 🚫 स्टिकर ब्लॉकर पहरा - स्टिकर को ग्रुप में जाने से रोकना (यहीं ख़त्म करना)
-    if (msg.sticker) return;
+    
+    // 🛡️ सख्त स्टिकर एवं प्रीमियम कस्टम इमोजी ब्लॉकर पहरा
+    if (msg.sticker) return; // साधारण स्टिकर ब्लॉक
+
+    // टेलीग्राम प्रीमियम कस्टम इमोजी / एनिमेटेड टिक्स को मैसेज के अंदर से ही फिल्टर करके उड़ाना
+    if (msg.entities || msg.caption_entities) {
+      const targetEntities = msg.entities || msg.caption_entities;
+      const hasCustomEmoji = targetEntities.some(ent => ent.type === 'custom_emoji');
+      if (hasCustomEmoji) {
+        return; // एनिमेटेड कस्टम इमोजी आते ही यहीं ख़त्म करना (ग्रुप में नहीं जाएगा)
+      }
+    }
 
     let currentSession = userSessions.get(chatId);
 
