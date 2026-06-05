@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Auto-Session Double-Check Production Mode v6'); 
+  res.end('Engine Active - Omprakash Ji Auto-Ready Seamless Production Mode v8'); 
 });
 server.listen(port);
 
@@ -20,7 +20,7 @@ let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
 
-// रीसेलर्स के चालू ऑर्डर सेशन को संभालने के लिए (बटन सिस्टम मेमोरी)
+// रीसेलर्स के चालू ऑर्डर सेशन को संभालने के लिए
 // स्टेटस: 'collecting' (डेटा ले रहा है), 'verifying' (पुष्टि मांग रहा है)
 const userSessions = new Map();
 const adminToResellerMsgMap = new Map();
@@ -32,7 +32,7 @@ function normalizeStylisedText(text) {
   
   const stylishNumbers = {
     '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
-    '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟺': '4', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟾': '8', '𝟿': '9',
+    '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟺': '4', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟴': '8', '𝟵': '9',
     '⓪': '0', '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5', '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9',
     '🄀': '0', '⒈': '1', '⒉': '2', '⒊': '3', '⒋': '4', '⒌': '5', '⒍': '6', '⒎': '7', '⒏': '8', '⒐': '9',
     '⓿': '0', '❶': '1', '❷': '2', '❸': '3', '❹': '4', '❺': '5', '❻': '6', '❼': '7', '❽': '8', '❾': '9'
@@ -50,7 +50,7 @@ function escapeHTML(text) {
 }
 
 // --- कीबोर्ड बटन्स टेम्पलेट्स ---
-// स्टार्ट बटन गायब - हमेशा केवल यही दो बटन मुख्य स्क्रीन पर दिखेंगे
+// मुख्य परमानेंट कीबोर्ड (हमेशा केवल यही दो बटन मुख्य स्क्रीन पर दिखेंगे, नया ऑर्डर बटन हटा दिया है)
 const permanentMenuKeyboard = {
   reply_markup: {
     keyboard: [
@@ -74,7 +74,7 @@ const confirmationMenuKeyboard = {
   }
 };
 
-// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट (शब्द सुधार) और पर्सनल मैसेज भेजना ---
+// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट और पर्सनल संदेश भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -133,7 +133,6 @@ function checkAddressDetails(txt) {
   }
 
   // शुद्ध 10 अंकों का स्वतंत्र मोबाइल नंबर खोजना (जो 6-9 से शुरू हो)
-  // यह मकान नंबर (3/4, 252/14A) या पैसों के हिसाब को अचूकता से नजरअंदाज करेगा
   const phoneRegex = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
   let phoneMatches = [];
   let match;
@@ -197,7 +196,7 @@ function checkAddressDetails(txt) {
 async function processFinalOrder(chatId) {
   const session = userSessions.get(chatId);
   if (!session || session.messages.length === 0) {
-    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
+    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
     return;
   }
 
@@ -213,7 +212,7 @@ async function processFinalOrder(chatId) {
   // वैलिडेशन चेक
   let globalCheck = checkAddressDetails(entireBundleText);
   if (globalCheck.isAddress === false) {
-    userSessions.delete(chatId); // 🔄 एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करना, कोई बटन दबाने की जरूरत नहीं
+    userSessions.delete(chatId); // 🔄 एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करके अगले आर्डर के लिए ऑटो-रेडी करना
     
     let dynamicReason = "";
     if (globalCheck.missing === 'pincode') {
@@ -228,7 +227,7 @@ async function processFinalOrder(chatId) {
                    `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस टेक्स्ट नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। कृपया नीचे दिए गए बटन पर क्लिक करके मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस एक साथ दोबारा भेजें!</b> 🚨\n\n` +
+                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <code>9376535752</code>\n` +
@@ -248,7 +247,7 @@ async function processFinalOrder(chatId) {
       
       let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
                      `अगर सच में आपका नया ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
-                     `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। नया ऑर्डर लगाने के लिए दोबारा फोटो और एड्रेस भेजें।</b>\n\n` +
+                     `🚨 <b>आपका पुराना डेटा साफ़ कर दिया गया है। बोट नए ऑर्डर के लिए रेडी है, आप सीधे नया आर्डर भेज सकते हैं।</b>\n\n` +
                      `━━━━━━━━━━━━━━━━━━━━\n` +
                      `👤 <b>ओमप्रकाश</b>\n` +
                      `📞 <code>9376535752</code>\n` +
@@ -263,7 +262,7 @@ async function processFinalOrder(chatId) {
     }
   }
 
-  // सफलतापूर्वक पास होने पर सेशन क्लियर करें और रीसेलर नेम मैप करें
+  // सफलतापूर्वक पास होने पर सेशन क्लियर करें (अगले नए ऑर्डर के लिए ऑटो-रेडी) और रीसेलर नेम मैप करें
   userSessions.delete(chatId);
   resellerNamesMap.set(userId, resellerName);
 
@@ -350,7 +349,7 @@ async function processFinalOrder(chatId) {
     });
   }
 
-  await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और पैकिंग टीम को भेज दिया गया है!", permanentMenuKeyboard);
+  await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और पैकिंग टीम को भेज दिया गया है!\n\n🔄 <b>बोट अगले नए ऑर्डर के लिए तैयार (Ready) है, आप सीधे नया माल भेज सकते हैं।</b>", permanentMenuKeyboard);
   triggerQueueProcessor();
 }
 
@@ -496,7 +495,7 @@ function handleIncomingMessage(msg, isEdited = false) {
     return;
   }
 
-  // रीсеलर साइड (निजी चैट बटन सिस्टम नियंत्रण)
+  // रीसेलर साइड (निजी चैट बटन सिस्टम नियंत्रण)
   if (chatId !== adminGroupId) {
     
     // 🛡️ सख्त साधारण स्टिकर ब्लॉकर
@@ -527,14 +526,14 @@ function handleIncomingMessage(msg, isEdited = false) {
     // बटन कमांड चेक (❌ ऑर्डर रद्द करना)
     if (cleanText === "❌ ऑर्डर रद्द करें / Cancel") {
       userSessions.delete(chatId); // 🧹 मेमोरी से तुरंत पूरा पुराना डेटा क्लियर
-      bot.sendMessage(chatId, "🔴 <b>आपका चालू ऑर्डर रद्द (Reset) कर दिया गया है!</b>\n\n🔄 नया ऑर्डर भेजने के लिए सीधे फोटो और एड्रेस भेजना शुरू करें।", { parse_mode: 'HTML', ...permanentMenuKeyboard });
+      bot.sendMessage(chatId, "🔴 <b>आपका चालू ऑर्डर रद्द (Reset) कर दिया गया है!</b>\n\n🔄 बोट नए ऑर्डर के लिए रेडी है, आप सीधे अपनी नई फोटो और एड्रेस भेजना शुरू कर सकते हैं।", { parse_mode: 'HTML', ...permanentMenuKeyboard });
       return;
     }
 
     // बटन कमांड चेक (🔴 ऑर्डर पूरा हुआ) -> भूल से दबाने से रोकने के लिए डबल वेरिफिकेशन मोड एक्टिव करना
     if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
       if (!currentSession || currentSession.messages.length === 0) {
-        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया पहले प्रोडक्ट फोटो और एड्रेस भेजें।", permanentMenuKeyboard);
+        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
         return;
       }
       currentSession.status = 'verifying'; // स्टेटस बदलकर पुष्टिकरण मोड पर सेट करना
@@ -543,11 +542,11 @@ function handleIncomingMessage(msg, isEdited = false) {
     }
 
     // डबल वेरिफिकेशन: हाँ, फाइनल है (भेजें)
-    if (cleanText === "✅ हाँ, फाइनल है (भेजें)") {
+    if (cleanText === "✅ हाँ, FINAL है (भेजें)" || cleanText === "✅ हाँ, फाइनल है (भेजें)") {
       if (currentSession && currentSession.status === 'verifying') {
         processFinalOrder(chatId);
       } else {
-        bot.sendMessage(chatId, "कृपया पहले अपना सामान और एड्रेस भेजें।", permanentMenuKeyboard);
+        bot.sendMessage(chatId, "कृपया सीधे अपना सामान और एड्रेस भेजना शुरू करें।", permanentMenuKeyboard);
       }
       return;
     }
@@ -563,7 +562,7 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // 🟢 ऑटो-स्टार्ट सेशन: रीसेलर जैसे ही पहला मैसेज (फोटो/टेक्स्ट) भेजेगा, सेशन खुद चालू हो जाएगा
+    // 🟢 ऑटो-स्टार्ट सेशन: रीसेलर्स के बिना किसी स्टार्ट बटन के सीधे माल भेजते ही सेशन बैकग्राउंड में खुद चालू हो जाएगा
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], status: 'collecting' };
       userSessions.set(chatId, currentSession);
