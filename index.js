@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Auto-Ready Seamless Production Mode v8'); 
+  res.end('Engine Active - Omprakash Ji Super Clear Summary Production Mode v9'); 
 });
 server.listen(port);
 
@@ -32,7 +32,7 @@ function normalizeStylisedText(text) {
   
   const stylishNumbers = {
     '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
-    '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟺': '4', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟴': '8', '𝟵': '9',
+    '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟴': '8', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟾': '8', '𝟿': '9',
     '⓪': '0', '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5', '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9',
     '🄀': '0', '⒈': '1', '⒉': '2', '⒊': '3', '⒋': '4', '⒌': '5', '⒍': '6', '⒎': '7', '⒏': '8', '⒐': '9',
     '⓿': '0', '❶': '1', '❷': '2', '❸': '3', '❹': '4', '❺': '5', '❻': '6', '❼': '7', '❽': '8', '❾': '9'
@@ -50,7 +50,7 @@ function escapeHTML(text) {
 }
 
 // --- कीबोर्ड बटन्स टेम्पलेट्स ---
-// मुख्य परमानेंट कीबोर्ड (हमेशा केवल यही दो बटन मुख्य स्क्रीन पर दिखेंगे, नया ऑर्डर बटन हटा दिया है)
+// मुख्य परमानेंट कीबोर्ड (हमेशा केवल यही दो बटन मुख्य स्क्रीन पर दिखेंगे)
 const permanentMenuKeyboard = {
   reply_markup: {
     keyboard: [
@@ -74,7 +74,7 @@ const confirmationMenuKeyboard = {
   }
 };
 
-// --- रोजाना रात 12 बजे ग्रुप में रिपोर्ट और पर्सनल संदेश भेजना ---
+// --- 📊 रोजाना रात 12 बजे ग्रुप में एकदम क्लियर और खुला-खुला रिपोर्ट लेआउट भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -86,10 +86,15 @@ function startDailyResetTimer() {
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `आज सभी रीसेलर्स के कुल ऑर्डर्स की लिस्ट:\n\n`;
         
+        // एक-एक करके रीसेलर का डेटा एकदम खुला-खुला और साफ़ लाइन में जोड़ना
         for (const [userId, count] of resellerOrderCounts.entries()) {
           const rName = resellerNamesMap.get(userId) || "Reseller";
           const safeName = escapeHTML(rName);
-          reportText += `👤 <b>${safeName}</b> (ID: ${userId}) — कुल <b>ऑर्डर</b>: <b>${count}</b>\n`;
+          
+          reportText += `👤 <b>नाम:</b> ${safeName}\n`;
+          reportText += `🆔 <b>ID:</b> <code>${userId}</code>\n`;
+          reportText += `📦 <b>कुल ऑर्डर:</b> <b>${count}</b>\n`;
+          reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`; // हर नाम के बाद एक क्लियर बॉर्डर लाइन और स्पेस
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -103,7 +108,6 @@ function startDailyResetTimer() {
           }
         }
         
-        reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
         
         try {
@@ -224,7 +228,7 @@ async function processFinalOrder(chatId) {
     }
     
     let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                   `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस टेक्स्ट नहीं मिला")}</code>\n\n` +
                    `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
@@ -562,7 +566,7 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // 🟢 ऑटो-स्टार्ट सेशन: रीसेलर्स के बिना किसी स्टार्ट बटन के सीधे माल भेजते ही सेशन बैकग्राउंड में खुद चालू हो जाएगा
+    // 🟢 ऑटो-स्टार्ट सेशन: रीसेलर्स के सीधे माल भेजते ही सेशन बैकग्राउंड में खुद चालू हो जाएगा
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], status: 'collecting' };
       userSessions.set(chatId, currentSession);
