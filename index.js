@@ -4,14 +4,29 @@ const http = require('http');
 const token = process.env.BOT_TOKEN;
 const adminGroupId = process.env.ADMIN_GROUP_ID;
 
-const bot = new TelegramBot(token, { polling: true });
+// 🛡️ टेलीग्राम पोलिंग एरर गार्ड (Conflict Error Handler)
+const bot = new TelegramBot(token, { 
+  polling: {
+    autoStart: true,
+    params: { timeout: 10 }
+  } 
+});
 
 // रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Fixed Crash-Proof Production v15'); 
+  res.end('Engine Active - Omprakash Ji Conflict-Proof Bulletproof Engine v16'); 
 });
 server.listen(port);
+
+// 🚨 रेंडर पर पुराना कनेक्शन होने पर बोट को क्रैश होने से बचाने का अचूक चक्रव्यूह 🚨
+bot.on('polling_error', (error) => {
+  if (error.message && error.message.includes('Conflict')) {
+    console.log('🔄 टेलीग्राम कनेक्शन कनवफ्लिक्ट डिटेक्ट हुआ! बोट रिकवरी मोड में है, क्रैश होने से बचा लिया गया है...');
+  } else {
+    console.error('Polling Error:', error.message);
+  }
+});
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
@@ -308,7 +323,6 @@ function handleIncomingMessage(msg, isEdited = false) {
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   if (!resellerName) resellerName = "Reseller";
 
-  // 🛡️ सेफ्टी गार्ड: टेक्स्ट और कैप्शन को खाली होने से बचाना ताकि रेंडर क्रैश न हो
   let cleanText = (msg.text || msg.caption || "").trim();
   let currentTimestamp = msg.date;
 
@@ -316,7 +330,7 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId === adminGroupId) {
     if (isEdited) return;
 
-    // 🚀 बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए क्रैश सेफ्टी के साथ) 🚀
+    // 🚀 बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए) 🚀
     if (cleanText && cleanText.toLowerCase().startsWith('@all')) {
       let actualBroadcastNotice = cleanText.substring(4).trim();
       
@@ -342,7 +356,7 @@ function handleIncomingMessage(msg, isEdited = false) {
             successCount++;
           } catch (err) { console.error(`Broadcast failed for ${targetResellerId}:`, err.message); }
         });
-        bot.sendMessage(adminGroupId, `📢 <b>मल्टीमीडिया ब्रॉडकास्ट सफल!</b>\nयह सूचना मीडिया/टेक्स्ट के साथ सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML' });
+        bot.sendMessage(adminGroupId, `📢 <b>मल्टीमीडिया ब्रॉडकास्ट सफल!</b>\nयह सूचना मीडिया/टेक्स्ट के साथ सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML'; });
       }
       return;
     }
