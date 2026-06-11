@@ -15,7 +15,7 @@ server.listen(port);
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
-let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट लॉक
+let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट锁
 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
@@ -91,7 +91,6 @@ function startDailyResetTimer() {
         }
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
         try { await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'HTML' }); } catch (e) { console.error(e.message); }
-        // नोट: दैनिक रीसेट में हम सिर्फ आज के काउंट साफ़ कर रहे हैं, ब्रॉडकास्ट डेटाबेस (activeResellersDatabase) को कभी डिलीट नहीं करेंगे!
         resellerOrderCounts.clear();
       }
     }
@@ -165,10 +164,10 @@ async function processFinalOrder(chatId) {
     let dynamicReason = globalCheck.missing === 'pincode' ? `❌ <b>आपके एड्रेस में पिनकोड गायब या गलत है!</b>` : (globalCheck.missing === 'phone' ? `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>` : `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`);
     
     let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <b>9376535752</b>\n` +
@@ -223,6 +222,7 @@ async function processFinalOrder(chatId) {
   triggerQueueProcessor();
 }
 
+// 🎯 आपका 15 सेकंड गैप वाला नियम: रीसेलर A के बाद रीसेलर B का ऑर्डर पूरे 15 सेकंड बाद ही ग्रुप में फॉरवर्ड होगा!
 async function triggerQueueProcessor() {
   if (isProcessingQueue || globalDeliveryQueue.length === 0) return;
   isProcessingQueue = true;
@@ -397,7 +397,7 @@ function handleIncomingMessage(msg, isEdited = false) {
       const counts = countOrdersAndPhotosInSession(currentSession);
       
       let verificationMsg = `📝 <b>भूल-चूक सुरक्षा लॉक:</b>\n\n` +
-                             `आपके इस स्लॉट में <b>${counts.orders} ऑर्डर (एड्रेस)</b> Richmond <b>${counts.photos} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\n` +
+                             `आपके इस स्लॉट में <b>${counts.orders} ऑर्डर (एड्रेस)</b> और <b>${counts.photos} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\n` +
                              `क्या आप सच में इस डेटा को फाइनल पैकिंग टीम को भेजना चाहते हैं?`;
                              
       bot.sendMessage(chatId, verificationMsg, { parse_mode: 'HTML', ...confirmationMenuKeyboard });
@@ -446,7 +446,6 @@ function handleIncomingMessage(msg, isEdited = false) {
       }
     }
 
-    // सामान्य बैकग्राउंड सेशन कलेक्शन (यहाँ बोट बीच में कोई मैसेज नहीं भेजेगा, चैट शांत रहेगी)
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], status: 'collecting' };
       userSessions.set(chatId, currentSession);
