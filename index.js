@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji All Resellers Bulletproof Broadcast v13'); 
+  res.end('Engine Active - Omprakash Ji All Resellers Bulletproof Broadcast v12 Final'); 
 });
 server.listen(port);
 
@@ -20,7 +20,7 @@ let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
 
-// सभी रीसेलर्स की आईडी को लाइफटाइम सुरक्षित रखने का अचूक डेटाबेस (Set)
+// सभी रीसेलर्स की आईडी को लाइफटाइम सुरक्षित रखने का डेटाबेस
 const activeResellersDatabase = new Set();
 
 const userSessions = new Map();
@@ -45,7 +45,12 @@ function normalizeStylisedText(text) {
 
 function escapeHTML(text) {
   if (!text) return "";
-  return text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // 🧹 कचरा टेक्स्ट फिल्टर: आईफोन या अन्य सिस्टम का कचरा लाइन तुरंत साफ करना
+  let clean = text.toString()
+    .replace(/Serdiya\s*से\s*प्राप्त\s*फ़ोटो/gi, "")
+    .replace(/से\s*प्राप्त\s*फ़ोटो/gi, "")
+    .trim();
+  return clean.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 const permanentMenuKeyboard = {
@@ -62,7 +67,7 @@ const confirmationMenuKeyboard = {
   }
 };
 
-// 📊 रोजाना रात 12 बजे ग्रुप में एकदम क्लियर और खुला-खुला रिपोर्ट लेआउट 📊
+// 📊 रोजाना रात 12 बजे ग्रुप में रिपोर्ट लेआउट 📊
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -101,6 +106,10 @@ startDailyResetTimer();
 function checkAddressDetails(txt) {
   if (!txt || txt.toString().trim() === "") return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
   let cleanTxt = normalizeStylisedText(txt).trim();
+  
+  // कचरा हटाने के बाद की शुद्ध जांच
+  cleanTxt = cleanTxt.replace(/Serdiya\s*से\s*प्राप्त\s*फ़ोटो/gi, "").replace(/से\s*प्राप्त\s*फ़ोटो/gi, "").trim();
+
   if (cleanTxt.length < 35) return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: cleanTxt };
 
   const phoneRegex = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
@@ -125,57 +134,26 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both', isPlainMedia: false, cleanText: cleanTxt };
 }
 
-// दिए गए टेक्स्ट ब्लॉक में से अलग-अलग वैध एड्रेस के टुकड़े निकालने का कड़क इंजन
-function splitMultipleAddresses(text) {
-  if (!text) return [];
-  let lines = text.split('\n');
-  let blocks = [];
-  let currentBlock = [];
-
-  for (let line of lines) {
-    let normLine = normalizeStylisedText(line);
-    const hasPhone = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/.test(normLine);
-    const hasPin = /(?<!\d)\d{6}(?!\d)/.test(normLine);
-
-    // अगर लाइन में नया फ़ोन या पिनकोड दिखे और चालू ब्लॉक में पहले से कुछ डेटा हो, तो नया एड्रेस मानकर पुराना ब्लॉक सेव करें
-    if ((hasPhone || hasPin) && currentBlock.length > 0) {
-      let currentText = currentBlock.join('\n').trim();
-      if (checkAddressDetails(currentText).isAddress || currentText.length > 25) {
-        blocks.push(currentText);
-        currentBlock = [];
-      }
-    }
-    currentBlock.push(line);
-  }
-  if (currentBlock.length > 0) {
-    blocks.push(currentBlock.join('\n').trim());
-  }
-  return blocks.filter(b => b.length > 0);
-}
-
 function countOrdersAndPhotosInSession(session) {
-  if (!session || !session.messages) return { orders: 0, photos: 0 };
+  let orderCount = 0;
   let photoCount = 0;
-  let textItems = [];
+  
+  if (!session || !session.messages) return { orders: 0, photos: 0 };
 
   session.messages.forEach(m => {
     if (m.type === 'photo') photoCount++;
-    if (m.text) textItems.push(m.text);
+    if (m.type === 'text' || m.type === 'photo' || m.type === 'video') {
+      let textToCheck = m.text || "";
+      let check = checkAddressDetails(textToCheck);
+      if (check.isAddress) orderCount++;
+    }
   });
 
-  let entireText = textItems.join('\n').trim();
-  let addressBlocks = splitMultipleAddresses(entireText);
-  let validOrderCount = 0;
-
-  addressBlocks.forEach(block => {
-    if (checkAddressDetails(block).isAddress) validOrderCount++;
-  });
-
-  if (validOrderCount === 0 && (photoCount > 0 || session.messages.length > 0)) {
-    validOrderCount = 1;
+  if (orderCount === 0 && (photoCount > 0 || session.messages.length > 0)) {
+    orderCount = 1;
   }
 
-  return { orders: validOrderCount, photos: photoCount };
+  return { orders: orderCount, photos: photoCount };
 }
 
 async function processFinalOrder(chatId) {
@@ -185,32 +163,20 @@ async function processFinalOrder(chatId) {
     return;
   }
   const { userId, resellerName, messages } = session;
+  let entireBundleText = messages.map(m => m.text || "").join("\n").trim();
+
+  let globalCheck = checkAddressDetails(entireBundleText);
   
-  let textMessages = messages.filter(m => m.text).map(m => m.text);
-  let entireBundleText = textMessages.join("\n").trim();
-
-  // 🛠️ स्मार्ट एड्रेस सेपरेटर: एक साथ भेजे गए सभी एड्रेस को अलग-अलग टुकड़ों में तोड़ना
-  let addressBlocks = splitMultipleAddresses(entireBundleText);
-  let validAddresses = [];
-
-  for (let block of addressBlocks) {
-    let check = checkAddressDetails(block);
-    if (check.isAddress) {
-      validAddresses.push(check);
-    }
-  }
-
-  // ❌ नियम: अगर एक भी वैध एड्रेस नहीं मिला, तो कड़क एरर मैसेज
-  if (validAddresses.length === 0) {
+  // ❌ नियम: गलत एड्रेस होने पर पुराना ओरिजिनल हेल्पलाइन एरर मैसेज
+  if (globalCheck.isAddress === false) {
     userSessions.delete(chatId);
-    let globalCheck = checkAddressDetails(entireBundleText);
     let dynamicReason = globalCheck.missing === 'pincode' ? `❌ <b>आपके एड्रेस में पिनकोड गायब या गलत है!</b>` : (globalCheck.missing === 'phone' ? `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>` : `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`);
     
     let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
+                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
-                   `<code>${escapeHTML(entireBundleText || "एड्रेस नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
+                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <b>9376535752</b>\n` +
@@ -220,7 +186,32 @@ async function processFinalOrder(chatId) {
     return; 
   }
 
-  // 📸 सभी प्रोडक्ट फोटो और मीडिया को सुरक्षित निकालना
+  // ❌ नियम: डुप्लीकेट ऑर्डर होने पर 30 मिनट वाला सुरक्षा मैसेज
+  if (globalCheck.isAddress && globalCheck.fingerprint) {
+    const lockKey = `${userId}_${globalCheck.fingerprint}`;
+    if (recentOrdersMap.has(lockKey)) {
+      userSessions.delete(chatId);
+      
+      let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
+                     `अगर सच में आपका नया ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
+                     `🚨 <b>आपका पुराना डेटा साफ़ कर दिया गया है। बोट नए ऑर्डर के लिए रेडी है, आप सीधे नया आर्डर भेज सकते हैं।</b>\n\n` +
+                     `━━━━━━━━━━━━━━━━━━━━\n` +
+                     `👤 <b>ओमप्रकाश</b>\n` +
+                     `📞 <b>9376535752</b>\n` +
+                     `✈️ <b>@Omprakash9950</b>`;
+                     
+      try { await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', ...permanentMenuKeyboard }); } catch (e) { console.error(e.message); }
+      return; 
+    } else {
+      recentOrdersMap.set(lockKey, true);
+      setTimeout(() => { recentOrdersMap.delete(lockKey); }, 30 * 60 * 1000);
+    }
+  }
+
+  userSessions.delete(chatId);
+  resellerNamesMap.set(userId, resellerName);
+
+  // 📸 पुराना मीडिया इंजन (ओरिजिनल ID ट्रैकिंग के साथ)
   let finalMediaItems = [];
   for (const m of messages) {
     if (m.type === 'photo' || m.type === 'video') {
@@ -228,38 +219,19 @@ async function processFinalOrder(chatId) {
     }
   }
 
-  userSessions.delete(chatId);
-  resellerNamesMap.set(userId, resellerName);
+  globalDeliveryQueue.push({
+    userId: userId,
+    resellerName: resellerName,
+    addressText: globalCheck.cleanText,
+    mediaItems: finalMediaItems,
+    messagesContext: messages
+  });
 
-  // प्रत्येक अलग पाए गए एड्रेस को कतार (Queue Engine) में अलग-अलग टास्क बनाकर डालना
-  for (let addrCheck of validAddresses) {
-    // ❌ नियम: डुप्लीकेट ऑर्डर होने पर 30 मिनट वाला सुरक्षा लॉक
-    const lockKey = `${userId}_${addrCheck.fingerprint}`;
-    if (recentOrdersMap.has(lockKey)) {
-      let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है और पहले ही भेजा जा चुका है!</b>\n\n` +
-                     `अगर सच में आपका नया ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
-                     `📝 <b>एड्रेस:</b> <code>${escapeHTML(addrCheck.cleanText)}</code>`;
-      try { await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', ...permanentMenuKeyboard }); } catch (e) { console.error(e.message); }
-      continue; 
-    } else {
-      recentOrdersMap.set(lockKey, true);
-      setTimeout(() => { recentOrdersMap.delete(lockKey); }, 30 * 60 * 1000);
-    }
-
-    globalDeliveryQueue.push({
-      userId: userId,
-      resellerName: resellerName,
-      addressText: addrCheck.cleanText,
-      mediaItems: finalMediaItems, 
-      messagesContext: messages
-    });
-  }
-
-  await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और packing टीम को भेज दिया गया है!\n\n🔄 <b>बोट अगले नए ऑर्डर के लिए तैयार (Ready) है, आप सीधे नया माल भेज सकते हैं।</b>", permanentMenuKeyboard);
+  await bot.sendMessage(chatId, "✅ आपका आदेश सफलतापूर्वक स्वीकार कर लिया गया है और packing टीम को भेज दिया गया है!\n\n🔄 <b>बोट अगले नए ऑर्डर के लिए तैयार (Ready) है, आप सीधे नया माल भेज सकते हैं।</b>", permanentMenuKeyboard);
   triggerQueueProcessor();
 }
 
-// 🎯 आपका 15 सेकंड गैप वाला नियम: रीसेलर A के बाद रीसेलर B का ऑर्डर (या एक साथ भेजे गए दोनों एड्रेस) पूरे 15 सेकंड के कड़े अंतराल पर ही ग्रुप में डिलीवर होंगे!
+// 🎯 आपका 15 सेकंड गैप वाला नियम: रीसेलर A के बाद रीसेलर B का ऑर्डर पूरे 15 सेकंड बाद ही ग्रुप में फॉरवर्ड होगा!
 async function triggerQueueProcessor() {
   if (isProcessingQueue || globalDeliveryQueue.length === 0) return;
   isProcessingQueue = true;
@@ -305,7 +277,7 @@ async function deliverOrderToAdminGroup(task) {
     }
   } catch (e) { console.error("Text Head Error:", e.message); }
 
-  // 🖼️ स्टेप २: ठीक उसके नीचे बिना किसी गैप के सुंदर चौकट ग्रिड भेजना (प्रत्येक डिलीवर फोटो आईडी का रीसेलर की सटीक फोटो से मिलान करना)
+  // 🖼️ स्टेप २: ठीक उसके नीचे बिना किसी गैप के सुंदर चौकट ग्रिड भेजना (सटीक फोटो मैपिंग के साथ)
   if (mediaItems.length > 0 && textMessageId) {
     let chunks = [];
     for (let i = 0; i < mediaItems.length; i += 10) {
@@ -329,7 +301,7 @@ async function deliverOrderToAdminGroup(task) {
           for (let index = 0; index < sentMediaBatch.length; index++) {
             const msgOfBatch = sentMediaBatch[index];
             const correspondingResellerMsgId = currentChunk[index] ? currentChunk[index].originalMsgId.toString() : sampleMsgId;
-            // 🎯 सटीक फोटो रिप्लाई इंजन: ग्रुप में डिलीवर हुई हर एक फोटो की ID को रीसेलर की उसी ओरिजिनल फोटो आईडी से मैप (लिंक) कर दिया गया है
+            // 🎯 सटीक फोटो रिप्लाई फिक्स: हर फोटो की आईडी रीसेलर के ओरिजिनल मैसेज से 100% लिंक
             adminToResellerMsgMap.set(msgOfBatch.message_id.toString(), correspondingResellerMsgId);
           }
         }
@@ -379,7 +351,7 @@ async function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // सामान्य पैकिंग रिप्लाई काम (ग्रुप टू पर्सनल - सिंगल रीसेलर लॉक) - 🛠️ एरर फिक्स के साथ सुरक्षित async
+    // सामान्य पैकिंग रिप्लाई काम (ग्रुप टू पर्सनल) - 🛠️ एरर फिक्स के साथ सुरक्षित async/await
     if (msg.reply_to_message) {
       const adminRepliedMsgId = msg.reply_to_message.message_id.toString();
       const originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
@@ -458,7 +430,7 @@ async function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // 🚀 दोनों तरफ का रिप्लाई ट्रैकर इंजन (रीसेलर जब पुराने मैसेज/ऑर्डर पर रिप्लाई करे) 🚀
+    // 🚀 दोनों तरफ का रिप्लाई ट्रैकर इंजन 🚀
     if (msg.reply_to_message && !isEdited) {
       const resellerRepliedToId = msg.reply_to_message.message_id.toString();
       let targetAdminMsgId = resellerToAdminMsgMap.get(resellerRepliedToId);
