@@ -15,7 +15,7 @@ const bot = new TelegramBot(token, {
 // रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Conflict-Proof Bulletproof Engine v16'); 
+  res.end('Engine Active - Omprakash Ji Syntax Fixed Bulletproof Engine v17'); 
 });
 server.listen(port);
 
@@ -195,7 +195,7 @@ async function processFinalOrder(chatId) {
     return; 
   }
 
-  // ❌ नियम: डुप्लीकेट ऑर्डर 30 मिनट वाला लॉक ❌
+  // ❌ नियम: डुप्लीकेट ऑर्डर 30 मिनट वाला LOCK ❌
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
@@ -330,7 +330,7 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId === adminGroupId) {
     if (isEdited) return;
 
-    // 🚀 बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए) 🚀
+    // 🚀 बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए - फिक्स्ड) 🚀
     if (cleanText && cleanText.toLowerCase().startsWith('@all')) {
       let actualBroadcastNotice = cleanText.substring(4).trim();
       
@@ -356,7 +356,7 @@ function handleIncomingMessage(msg, isEdited = false) {
             successCount++;
           } catch (err) { console.error(`Broadcast failed for ${targetResellerId}:`, err.message); }
         });
-        bot.sendMessage(adminGroupId, `📢 <b>मल्टीमीडिया ब्रॉडकास्ट सफल!</b>\nयह सूचना मीडिया/टेक्स्ट के साथ सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML'; });
+        bot.sendMessage(adminGroupId, `📢 <b>मल्टीमीडिया ब्रॉडकास्ट सफल!</b>\nयह सूचना मीडिया/टेक्स्ट के साथ सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML' });
       }
       return;
     }
