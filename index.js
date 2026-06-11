@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Production Final Master Script v11'); 
+  res.end('Engine Active - Omprakash Ji Multimedia Broadcast Production v14'); 
 });
 server.listen(port);
 
@@ -20,7 +20,7 @@ let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
 
-// रीसेलर्स के चालू ब्रॉडकास्ट डेटाबेस को रखने के लिए सेट (Set)
+// सभी रीसेलर्स की आईडी को लाइफटाइम सुरक्षित रखने का अचूक डेटाबेस (Set)
 const activeResellersDatabase = new Set();
 
 const userSessions = new Map();
@@ -29,6 +29,9 @@ const userSessions = new Map();
 const adminToResellerMsgMap = new Map(); // Admin Msg ID -> Reseller Msg ID
 const resellerToAdminMsgMap = new Map(); // Reseller Msg ID -> Admin Msg ID
 const orderIdToAdminMsgMap = new Map();  // Unique Order Key -> Admin Text Message ID
+
+// 🚀 एडमिन ग्रुप में आए रीसेलर के 'लाइव रिप्लाई' मैसेज की ट्रैकिंग 🚀
+const adminLiveReplyToResellerMsgMap = new Map(); // Admin Live Reply Msg ID -> Reseller's original message ID
 
 function normalizeStylisedText(text) {
   if (!text) return "";
@@ -91,7 +94,7 @@ function startDailyResetTimer() {
         }
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
         try { await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'HTML' }); } catch (e) { console.error(e.message); }
-        resellerOrderCounts.clear(); resellerNamesMap.clear();
+        resellerOrderCounts.clear();
       }
     }
   }, 60000); 
@@ -125,7 +128,6 @@ function checkAddressDetails(txt) {
   return { isAddress: false, missing: 'both', isPlainMedia: false, cleanText: cleanTxt };
 }
 
-// 🧮 आर्डर पूरा हुआ के बाद ऑर्डर संख्या और फोटो काउंट गिनने का इंजन 🧮
 function countOrdersAndPhotosInSession(session) {
   let orderCount = 0;
   let photoCount = 0;
@@ -141,7 +143,6 @@ function countOrdersAndPhotosInSession(session) {
     }
   });
 
-  // सुरक्षा लॉक: अगर फोटो हैं लेकिन टेक्स्ट में एड्रेस अलग से डिटेक्ट नहीं हुआ तो न्यूनतम 1 आर्डर मानेंगे
   if (orderCount === 0 && (photoCount > 0 || session.messages.length > 0)) {
     orderCount = 1;
   }
@@ -159,19 +160,40 @@ async function processFinalOrder(chatId) {
   let entireBundleText = messages.map(m => m.text || "").join("\n").trim();
 
   let globalCheck = checkAddressDetails(entireBundleText);
+  
+  // ❌ नियम: गलत एड्रेस होने पर ओमप्रकाश जी का नया कड़क हेल्पलाइन एरर मैसेज ❌
   if (globalCheck.isAddress === false) {
     userSessions.delete(chatId);
     let dynamicReason = globalCheck.missing === 'pincode' ? `❌ <b>आपके एड्रेस में पिनकोड गायब या गलत है!</b>` : (globalCheck.missing === 'phone' ? `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>` : `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`);
-    let alertMsg = `${dynamicReason}\n\nयह आपका आदेश आगे packing के लिए नहीं जाएगा।\n\n📝 <b>आपका एड्रेस ये था:</b>\n<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n🚨 <b>ऑर्डर ऑटो-कैंसल। बोट रेडी है, दोबारा सीधे पूरा सामान भेजें!</b>`;
+    
+    let alertMsg = `${dynamicReason}\n\n` +
+                   `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
+                   `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
+                   `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
+                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `━━━━━━━━━━━━━━━━━━━━\n` +
+                   `👤 <b>ओमप्रकाश</b>\n` +
+                   `📞 <b>9376535752</b>\n` +
+                   `✈️ <b>@Omprakash9950</b>`;
+                   
     try { await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', ...permanentMenuKeyboard }); } catch (e) { console.error(e.message); }
     return; 
   }
 
+  // ❌ नियम: डुप्लीकेट ऑर्डर होने पर ओमप्रकाश जी का नया कड़क 30 मिनट वाला मैसेज ❌
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
       userSessions.delete(chatId);
-      let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n🚨 <b>पुराना डेटा साफ़। बोट नए ऑर्डर के लिए रेडी है, आप सीधे नया आर्डर भेज सकते हैं।</b>`;
+      
+      let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
+                     `अगर सच में आपका नया ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
+                     `🚨 <b>आपका पुराना डेटा साफ़ कर दिया गया है। बोट नए ऑर्डर के लिए रेडी है, आप सीधे नया आर्डर भेज सकते हैं।</b>\n\n` +
+                     `━━━━━━━━━━━━━━━━━━━━\n` +
+                     `👤 <b>ओमप्रकाश</b>\n` +
+                     `📞 <b>9376535752</b>\n` +
+                     `✈️ <b>@Omprakash9950</b>`;
+                     
       try { await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', ...permanentMenuKeyboard }); } catch (e) { console.error(e.message); }
       return; 
     } else {
@@ -199,7 +221,7 @@ async function processFinalOrder(chatId) {
     messagesContext: messages
   });
 
-  await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और पैकिंग टीम को भेज दिया गया है!\n\n🔄 <b>बोट अगले नए ऑर्डर के लिए तैयार (Ready) है, आप सीधे नया माल भेज सकते हैं।</b>", permanentMenuKeyboard);
+  await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और packing टीम को भेज दिया गया है!\n\n🔄 <b>बोट अगले नए ऑर्डर के लिए तैयार (Ready) है, आप सीधे नया माल भेज सकते हैं।</b>", permanentMenuKeyboard);
   triggerQueueProcessor();
 }
 
@@ -232,7 +254,6 @@ async function deliverOrderToAdminGroup(task) {
   let idPart = userId.toString().substring(userId.toString().length - 1);
   let assignedOrderNumStr = `${namePart}${idPart}-${currentCount.toString().padStart(3, '0')}`;
 
-  // ✍️ स्टेप १: सबसे ऊपर केवल शुद्ध एड्रेस संदेश भेजना
   let orderHeader = `${escapeHTML(addressText)}\n\n👤 ${safeResellerName}\n🆔 ID: ${userId}\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
   let textMessageId = null;
   
@@ -240,19 +261,15 @@ async function deliverOrderToAdminGroup(task) {
     let sentHeader = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'HTML' });
     if (sentHeader) {
       textMessageId = sentHeader.message_id.toString();
-      // दोनों तरफ की मैपिंग तिजोरी में सहेजना
       adminToResellerMsgMap.set(textMessageId, sampleMsgId);
       resellerToAdminMsgMap.set(sampleMsgId, textMessageId);
       
-      // पुराने ऑर्डर के रिप्लाई को ट्रैक करने के लिए यूनिक की लॉक
       const uniqueOrderLockKey = `${userId}_${assignedOrderNumStr}`;
       orderIdToAdminMsgMap.set(uniqueOrderLockKey, textMessageId);
     }
   } catch (e) { console.error("Text Head Error:", e.message); }
 
-  // 🖼️ स्टेप २: ठीक उसके नीचे बिना किसी गैप के (0 सेकंड में) सुंदर चौकट ग्रिड भेजना
   if (mediaItems.length > 0 && textMessageId) {
-    // टेलीग्राम एल्बम में १० से ज्यादा फोटो होने पर उसे छोटे-छोटे टुकड़ों में (बिना गैप के) तोड़ना
     let chunks = [];
     for (let i = 0; i < mediaItems.length; i += 10) {
       chunks.push(mediaItems.slice(i, i + 10));
@@ -280,7 +297,6 @@ async function deliverOrderToAdminGroup(task) {
     }
   }
 
-  // 🟢 स्टेप ३: पूरा ऑर्डर ख़त्म होते ही तुरंत नीचे डिवाइडर टेक्स्ट डालना
   try {
     await bot.sendMessage(adminGroupId, `🟢 <b>Next Order</b> 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'HTML' });
   } catch (e) { console.error("Divider Error:", e.message); }
@@ -295,30 +311,53 @@ function handleIncomingMessage(msg, isEdited = false) {
   let cleanText = (msg.text || msg.caption || "").trim();
   let currentTimestamp = msg.date;
 
-  // 📢 रूट १: एडमिन ग्रुप इंजन (@all ब्रॉडकास्ट फ़िल्टर एवं पर्सनल रिप्लाई)
+  // 📢 रूट १: एडमिन ग्रुप इंजन (@all मल्टीमीडिया ब्रॉडकास्ट फ़िल्टर एवं लाइव रिप्लाई ट्रैकर)
   if (chatId === adminGroupId) {
     if (isEdited) return;
 
-    // 🚀 @all कड़क डिटेक्टर - केवल टेक्स्ट ब्रॉडकास्ट सुरक्षा लॉक 🚀
-    if (cleanText.toLowerCase().startsWith('@all') && msg.text) {
+    // 🚀 कड़क डिटेक्टर - बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए) 🚀
+    if (cleanText.toLowerCase().startsWith('@all')) {
       let actualBroadcastNotice = cleanText.substring(4).trim();
-      if (actualBroadcastNotice.length > 0) {
+      
+      let finalBroadCastList = new Set([
+        ...activeResellersDatabase,
+        ...resellerOrderCounts.keys(),
+        ...resellerNamesMap.keys()
+      ]);
+
+      if (finalBroadCastList.size > 0) {
         let successCount = 0;
-        activeResellersDatabase.forEach((targetResellerId) => {
+        finalBroadCastList.forEach((targetResellerId) => {
           try {
-            bot.sendMessage(targetResellerId, actualBroadcastNotice);
+            if (msg.photo) {
+              // फोटो + कैप्शन ब्रॉडकास्ट
+              bot.sendPhoto(targetResellerId, msg.photo[msg.photo.length - 1].file_id, { caption: actualBroadcastNotice });
+            } else if (msg.video) {
+              // वीडियो + कैप्शन ब्रॉडकास्ट
+              bot.sendVideo(targetResellerId, msg.video.file_id, { caption: actualBroadcastNotice });
+            } else if (msg.text) {
+              // सिर्फ शुद्ध टेक्स्ट ब्रॉडकास्ट
+              if (actualBroadcastNotice.length > 0) {
+                bot.sendMessage(targetResellerId, actualBroadcastNotice);
+              }
+            }
             successCount++;
           } catch (err) { console.error(`Broadcast failed for ${targetResellerId}:`, err.message); }
         });
-        bot.sendMessage(adminGroupId, `📢 <b>ब्रॉडकास्ट सफल!</b>\nयह सूचना सभी <b>${successCount}</b> एक्टिव रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML' });
+        bot.sendMessage(adminGroupId, `📢 <b>मल्टीमीडिया ब्रॉडकास्ट सफल!</b>\nयह सूचना मीडिया/टेक्स्ट के साथ सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML' });
       }
       return;
     }
 
-    // सामान्य पैकिंग रिप्लाई काम (ग्रुप टू पर्सनल - सिंगल रीसेलर लॉक)
+    // 🔄 पैकिंग टीम का जवाब (ग्रुप टू पर्सनल - टू-वे रिप्लाई लिंकिंग लॉक) 🔄
     if (msg.reply_to_message) {
       const adminRepliedMsgId = msg.reply_to_message.message_id.toString();
-      const originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
+      
+      let originalResellerMsgId = adminLiveReplyToResellerMsgMap.get(adminRepliedMsgId);
+      
+      if (!originalResellerMsgId) {
+        originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
+      }
       
       const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
       const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -326,7 +365,10 @@ function handleIncomingMessage(msg, isEdited = false) {
       if (idMatch) {
         const targetId = idMatch[1].trim();
         let replyOptions = {};
-        if (originalResellerMsgId) replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
+        
+        if (originalResellerMsgId) {
+          replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
+        }
 
         if (msg.photo) {
           bot.sendPhoto(targetId, msg.photo[msg.photo.length - 1].file_id, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
@@ -344,7 +386,6 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId !== adminGroupId) {
     if (msg.sticker) return; 
 
-    // ब्रॉडकास्ट डेटाबेस के लिए यूजर आईडी सेव करना
     activeResellersDatabase.add(chatId);
 
     if (cleanText !== "") {
@@ -361,7 +402,6 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // 🧮 आर्डर पूरा हुआ - लाइव काउंटिंग सुरक्षा लॉक 🧮
     if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
       if (!currentSession || currentSession.messages.length === 0) {
         bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है।", permanentMenuKeyboard);
@@ -369,7 +409,6 @@ function handleIncomingMessage(msg, isEdited = false) {
       }
       currentSession.status = 'verifying';
       
-      // लाइव काउंट की गणना करना
       const counts = countOrdersAndPhotosInSession(currentSession);
       
       let verificationMsg = `📝 <b>भूल-चूक सुरक्षा लॉक:</b>\n\n` +
@@ -393,7 +432,6 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // 🚀 दोनों तरफ का रिप्लाई ट्रैकर इंजन (रीसेलर जब पुराने मैसेज/ऑर्डर पर रिप्लाई करे) 🚀
     if (msg.reply_to_message && !isEdited) {
       const resellerRepliedToId = msg.reply_to_message.message_id.toString();
       let targetAdminMsgId = resellerToAdminMsgMap.get(resellerRepliedToId);
@@ -411,18 +449,22 @@ function handleIncomingMessage(msg, isEdited = false) {
         let adminReplyOptions = { reply_to_message_id: parseInt(targetAdminMsgId), parse_mode: 'HTML' };
         let replyNotice = `💬 <b>रीसेलर का जवाब (Reply):</b>\n👤 ${resellerName} (ID: ${chatId})\n\n`;
         
+        let sentLiveMsg = null;
         if (msg.photo) {
-          bot.sendPhoto(adminGroupId, msg.photo[msg.photo.length - 1].file_id, { caption: replyNotice + (cleanText || "फोटो भेजा"), ...adminReplyOptions });
+          sentLiveMsg = await bot.sendPhoto(adminGroupId, msg.photo[msg.photo.length - 1].file_id, { caption: replyNotice + (cleanText || "फोटो भेजा"), ...adminReplyOptions });
         } else if (msg.video) {
-          bot.sendVideo(adminGroupId, msg.video.file_id, { caption: replyNotice + (cleanText || "वीडियो भेजा"), ...adminReplyOptions });
+          sentLiveMsg = await bot.sendVideo(adminGroupId, msg.video.file_id, { caption: replyNotice + (cleanText || "वीडियो भेजा"), ...adminReplyOptions });
         } else if (cleanText !== "") {
-          bot.sendMessage(adminGroupId, replyNotice + `<code>${escapeHTML(cleanText)}</code>`, adminReplyOptions);
+          sentLiveMsg = await bot.sendMessage(adminGroupId, replyNotice + `<code>${escapeHTML(cleanText)}</code>`, adminReplyOptions);
+        }
+
+        if (sentLiveMsg) {
+          adminLiveReplyToResellerMsgMap.set(sentLiveMsg.message_id.toString(), msg.message_id.toString());
         }
         return; 
       }
     }
 
-    // सामान्य बैकग्राउंड सेशन कलेक्शन (यहाँ बोट बीच में कोई मैसेज नहीं भेजेगा, चैट शांत रहेगी)
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], status: 'collecting' };
       userSessions.set(chatId, currentSession);
