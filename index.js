@@ -1,4 +1,4 @@
-const TelegramBot = require('node-telegram-bot-api');
+Const TelegramBot = require('node-telegram-bot-api');
 const http = require('http');
 
 const token = process.env.BOT_TOKEN;
@@ -20,7 +20,7 @@ let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
 
-// रीसेलर्स के चालू आदेश सेशन को संभालने के लिए
+// रीसेलर्स के चालू ऑर्डर सेशन को संभालने के लिए
 // स्टेटस: 'collecting' (डेटा ले रहा है), 'verifying' (पुष्टि मांग रहा है)
 const userSessions = new Map();
 const adminToResellerMsgMap = new Map();
@@ -86,7 +86,7 @@ function startDailyResetTimer() {
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `आज सभी रीसेलर्स के कुल ऑर्डर्स की लिस्ट:\n\n`;
         
-        let grandTotalOrders = 0; // सभी रीसेलर्स के ऑर्डर्स का कुल टोटल जोड़ गिनने के लिए वेरिएबल
+        let grandTotalOrders = 0; // सभी ऑर्डर्स का कुल टोटल जोड़ इकट्ठा करने के लिए वेरिएबल
         
         // एक-एक करके रीसेलर का डेटा एकदम खुला-खुला और साफ़ लाइन में जोड़ना
         for (const [userId, count] of resellerOrderCounts.entries()) {
@@ -98,7 +98,7 @@ function startDailyResetTimer() {
           reportText += `📦 <b>कुल ऑर्डर:</b> <b>${count}</b>\n`;
           reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`; // हर नाम के बाद एक क्लियर बॉर्डर लाइन और स्पेस
           
-          grandTotalOrders += count; // टोटल में आज का काउंट जोड़ना
+          grandTotalOrders += count; // ग्रैंड टोटल में जोड़ते जाना
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -112,7 +112,7 @@ function startDailyResetTimer() {
           }
         }
         
-        // 🎯 ओमप्रकाश जी का मुख्य नियम: रिपोर्ट के सबसे नीचे सभी ऑर्डर्स का ग्रैंड टोटल दिखाना
+        // 🎯 ओमप्रकाश जी का मुख्य नियम: पूरी लिस्ट के नीचे आज के ऑल ओवर ऑर्डर्स का टोटल दिखाना
         reportText += `📦 <b>आज के कुल ऑल ओवर ऑर्डर्स (Total):</b> <b>${grandTotalOrders}</b> 🎉\n`;
         reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`;
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
@@ -475,7 +475,7 @@ function handleIncomingMessage(msg, isEdited = false) {
   let cleanText = (msg.text || msg.caption || "").trim();
   let currentTimestamp = msg.date;
 
-  // एडमिन ग्रुप रिप्लाईूट सिस्टम (ग्रुप टू पर्सनल)
+  // एडमिन ग्रुप रिप्लाई रूट सिस्टम (ग्रुप टू पर्सनल)
   if (chatId === adminGroupId && msg.reply_to_message && !isEdited) {
     const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
     const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -528,7 +528,7 @@ function handleIncomingMessage(msg, isEdited = false) {
 
     if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
       if (!currentSession || currentSession.messages.length === 0) {
-        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
+        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे... प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
         return;
       }
       currentSession.status = 'verifying';
