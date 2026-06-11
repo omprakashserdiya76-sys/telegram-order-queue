@@ -4,29 +4,14 @@ const http = require('http');
 const token = process.env.BOT_TOKEN;
 const adminGroupId = process.env.ADMIN_GROUP_ID;
 
-// 🛡️ टेलीग्राम पोलिंग एरर गार्ड (Conflict Error Handler)
-const bot = new TelegramBot(token, { 
-  polling: {
-    autoStart: true,
-    params: { timeout: 10 }
-  } 
-});
+const bot = new TelegramBot(token, { polling: true });
 
 // रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Broadcast Fixed Engine v19'); 
+  res.end('Engine Active - Omprakash Ji All Resellers Bulletproof Broadcast v12'); 
 });
 server.listen(port);
-
-// 🚨 रेंडर पर पुराना कनेक्शन होने पर बोट को क्रैश होने से बचाने का अचूक चक्रव्यूह 🚨
-bot.on('polling_error', (error) => {
-  if (error.message && error.message.includes('Conflict')) {
-    console.log('🔄 टेलीग्राम कनेक्शन कनवफ्लिक्ट डिटेक्ट हुआ! बोट रिकवरी मोड में है, क्रैश होने से बचा लिया गया है...');
-  } else {
-    console.error('Polling Error:', error.message);
-  }
-});
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
@@ -44,9 +29,6 @@ const userSessions = new Map();
 const adminToResellerMsgMap = new Map(); // Admin Msg ID -> Reseller Msg ID
 const resellerToAdminMsgMap = new Map(); // Reseller Msg ID -> Admin Msg ID
 const orderIdToAdminMsgMap = new Map();  // Unique Order Key -> Admin Text Message ID
-
-// 🚀 एडमिन ग्रुप में आए रीसेलर के 'लाइव रिप्लाई' मैसेज की ट्रैकिंग 🚀
-const adminLiveReplyToResellerMsgMap = new Map(); // Admin Live Reply Msg ID -> Reseller's original message ID
 
 function normalizeStylisedText(text) {
   if (!text) return "";
@@ -68,7 +50,7 @@ function escapeHTML(text) {
 
 const permanentMenuKeyboard = {
   reply_markup: {
-    keyboard: [[{ text: "🔴 ऑर्ड पूरा हुआ" }], [{ text: "❌ ऑर्डर रद्द करें / Cancel" }]],
+    keyboard: [[{ text: "🔴 ऑर्डर पूरा हुआ" }], [{ text: "❌ ऑर्डर रद्द करें / Cancel" }]],
     resize_keyboard: true, one_time_keyboard: false
   }
 };
@@ -80,7 +62,7 @@ const confirmationMenuKeyboard = {
   }
 };
 
-// 📊 रोजाना रात 12 बजे ग्रुप में एकदम रिपोर्ट लेआउट 📊
+// 📊 रोजाना रात 12 बजे ग्रुप में एकदम क्लियर और खुला-खुला रिपोर्ट लेआउट 📊
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -103,12 +85,13 @@ function startDailyResetTimer() {
                                 `* जिन ऑर्डर्स का COD अमाउंट ₹3900 से अधिक है, उन पर ₹200 शिपिंग charge लगेगा।\n` +
                                 `* बाकी सभी ऑर्डर्स पर ₹100 शिपिंग charge लगेगा।\n` +
                                 `मार्जिन जुड़वाने के लिए, कृपया शिपिंग charge का भुगतान करें और रसीद मुझे व्हाट्सएप (8890438038)पर भेज दें। धन्यवाद!\n\n` +
-                                ` हमारे साथ काम करने के लिए धन्यवाद! 🙏`;
+                                `हमारे साथ काम करने के लिए धन्यवाद! 🙏`;
             await bot.sendMessage(userId, personalMsg, { parse_mode: 'HTML' });
           } catch (err) { console.error(err.message); }
         }
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
         try { await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'HTML' }); } catch (e) { console.error(e.message); }
+        // नोट: दैनिक रीसेट में हम सिर्फ आज के काउंट साफ़ कर रहे हैं, ब्रॉडकास्ट डेटाबेस (activeResellersDatabase) को कभी डिलीट नहीं करेंगे!
         resellerOrderCounts.clear();
       }
     }
@@ -176,16 +159,16 @@ async function processFinalOrder(chatId) {
 
   let globalCheck = checkAddressDetails(entireBundleText);
   
-  // ❌ नियम: गलत एड्रेस हेल्पलाइन एरर मैसेज ❌
+  // ❌ नियम: गलत एड्रेस होने पर ओमप्रकाश जी का नया कड़क हेल्पलाइन एरर मैसेज ❌
   if (globalCheck.isAddress === false) {
     userSessions.delete(chatId);
     let dynamicReason = globalCheck.missing === 'pincode' ? `❌ <b>आपके एड्रेस में पिनकोड गायब या गलत है!</b>` : (globalCheck.missing === 'phone' ? `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>` : `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`);
     
     let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
+                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <b>9376535752</b>\n` +
@@ -195,7 +178,7 @@ async function processFinalOrder(chatId) {
     return; 
   }
 
-  // ❌ नियम: डुप्लीकेट ऑर्डर 30 मिनट वाला LOCK ❌
+  // ❌ नियम: डुप्लीकेट ऑर्डर होने पर ओमप्रकाश जी का नया कड़क 30 मिनट वाला मैसेज ❌
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
@@ -269,6 +252,7 @@ async function deliverOrderToAdminGroup(task) {
   let idPart = userId.toString().substring(userId.toString().length - 1);
   let assignedOrderNumStr = `${namePart}${idPart}-${currentCount.toString().padStart(3, '0')}`;
 
+  // ✍️ स्टेप १: सबसे ऊपर केवल शुद्ध एड्रेस संदेश भेजना
   let orderHeader = `${escapeHTML(addressText)}\n\n👤 ${safeResellerName}\n🆔 ID: ${userId}\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
   let textMessageId = null;
   
@@ -284,6 +268,7 @@ async function deliverOrderToAdminGroup(task) {
     }
   } catch (e) { console.error("Text Head Error:", e.message); }
 
+  // 🖼️ स्टेप २: ठीक उसके नीचे बिना किसी गैप के (0 सेकंड में) सुंदर चौकट ग्रिड भेजना
   if (mediaItems.length > 0 && textMessageId) {
     let chunks = [];
     for (let i = 0; i < mediaItems.length; i += 10) {
@@ -312,13 +297,14 @@ async function deliverOrderToAdminGroup(task) {
     }
   }
 
+  // 🟢 स्टेप ३: पूरा ऑर्डर ख़त्म होते ही तुरंत नीचे डिवाइडर टेक्स्ट डालना
   try {
     await bot.sendMessage(adminGroupId, `🟢 <b>Next Order</b> 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'HTML' });
   } catch (e) { console.error("Divider Error:", e.message); }
 }
 
-async function handleIncomingMessage(msg, isEdited = false) {
-  if (!msg || !msg.chat || !msg.from) return;
+function handleIncomingMessage(msg, isEdited = false) {
+  if (!msg.chat || !msg.from) return;
   const chatId = msg.chat.id.toString();
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   if (!resellerName) resellerName = "Reseller";
@@ -326,50 +312,38 @@ async function handleIncomingMessage(msg, isEdited = false) {
   let cleanText = (msg.text || msg.caption || "").trim();
   let currentTimestamp = msg.date;
 
-  // 📢 रूट १: एडमिन ग्रुप इंजन
+  // 📢 रूट १: एडमिन ग्रुप इंजन (@all ब्रॉडकास्ट फ़िल्टर एवं पर्सनल रिप्लाई)
   if (chatId === adminGroupId) {
     if (isEdited) return;
 
-    // 🔥 सुरक्षा लॉक: रिप्लाई मोड हो या डायरेक्ट मोड, अगर @all है तो सबसे पहले ब्रॉडकास्ट होगा! 🔥
-    if (cleanText && cleanText.toLowerCase().startsWith('@all')) {
+    // 🚀 @all कड़क डिटेक्टर - बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन 🚀
+    if (cleanText.toLowerCase().startsWith('@all') && msg.text) {
       let actualBroadcastNotice = cleanText.substring(4).trim();
-      
-      let finalBroadCastList = new Set([
-        ...activeResellersDatabase,
-        ...resellerOrderCounts.keys(),
-        ...resellerNamesMap.keys()
-      ]);
+      if (actualBroadcastNotice.length > 0) {
+        
+        // 🎯 अचूक समाधान: मेमोरी के सभी मुमकिन रीसेलर्स को एक फाइनल मास्टर लिस्ट में इकट्ठा करना
+        let finalBroadCastList = new Set([
+          ...activeResellersDatabase,
+          ...resellerOrderCounts.keys(),
+          ...resellerNamesMap.keys()
+        ]);
 
-      if (finalBroadCastList.size > 0) {
         let successCount = 0;
         finalBroadCastList.forEach((targetResellerId) => {
           try {
-            if (msg.photo) {
-              bot.sendPhoto(targetResellerId, msg.photo[msg.photo.length - 1].file_id, { caption: actualBroadcastNotice });
-            } else if (msg.video) {
-              bot.sendVideo(targetResellerId, msg.video.file_id, { caption: actualBroadcastNotice });
-            } else if (msg.text) {
-              if (actualBroadcastNotice.length > 0) {
-                bot.sendMessage(targetResellerId, actualBroadcastNotice);
-              }
-            }
+            bot.sendMessage(targetResellerId, actualBroadcastNotice);
             successCount++;
           } catch (err) { console.error(`Broadcast failed for ${targetResellerId}:`, err.message); }
         });
-        bot.sendMessage(adminGroupId, `📢 <b>मल्टीमीडिया ब्रॉडकास्ट सफल!</b>\nयह सूचना रिप्लाई के अंदर से सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML' });
+        bot.sendMessage(adminGroupId, `📢 <b>ब्रॉडकास्ट सफल!</b>\nयह सूचना सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML' });
       }
-      return; // ब्रॉडकास्ट हो गया, अब नीचे का रिप्लाई कोड नहीं चलेगा
+      return;
     }
 
-    // 🔄 सामान्य पैकिंग टीम का जवाब (ग्रुप टू पर्सनल - सिर्फ तब जब @all न लिखा हो)
+    // सामान्य पैकिंग रिप्लाई काम (ग्रुप टू पर्सनल - सिंगल रीसेलर लॉक)
     if (msg.reply_to_message) {
       const adminRepliedMsgId = msg.reply_to_message.message_id.toString();
-      
-      let originalResellerMsgId = adminLiveReplyToResellerMsgMap.get(adminRepliedMsgId);
-      
-      if (!originalResellerMsgId) {
-        originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
-      }
+      const originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
       
       const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
       const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
@@ -377,10 +351,7 @@ async function handleIncomingMessage(msg, isEdited = false) {
       if (idMatch) {
         const targetId = idMatch[1].trim();
         let replyOptions = {};
-        
-        if (originalResellerMsgId) {
-          replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
-        }
+        if (originalResellerMsgId) replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
 
         if (msg.photo) {
           bot.sendPhoto(targetId, msg.photo[msg.photo.length - 1].file_id, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
@@ -394,14 +365,15 @@ async function handleIncomingMessage(msg, isEdited = false) {
     return;
   }
 
-  // 🔄 रूट २: रीसेलर साइड
+  // 🔄 रूट २: रीसेलर साइड (निजी चैट बटन एवं दोनों तरफ की रिप्लाई ट्रैकिंग)
   if (chatId !== adminGroupId) {
     if (msg.sticker) return; 
 
+    // ब्रॉडकास्ट डेटाबेस के लिए लाइफटाइम यूजर आईडी सेव करना
     activeResellersDatabase.add(chatId);
 
     if (cleanText !== "") {
-      if ((cleanText.length < 8 || (msg.entities && msg.entities.some(e => e.type === 'custom_emoji'))) && !checkAddressDetails(cleanText).isAddress) {
+      if ((cleanText.length < 8 || msg.entities?.some(e => e.type === 'custom_emoji')) && !checkAddressDetails(cleanText).isAddress) {
         return; 
       }
     }
@@ -414,6 +386,7 @@ async function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
+    // 🧮 आर्डर पूरा हुआ - लाइव काउंटिंग सुरक्षा लॉक 🧮
     if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
       if (!currentSession || currentSession.messages.length === 0) {
         bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है।", permanentMenuKeyboard);
@@ -424,7 +397,7 @@ async function handleIncomingMessage(msg, isEdited = false) {
       const counts = countOrdersAndPhotosInSession(currentSession);
       
       let verificationMsg = `📝 <b>भूल-चूक सुरक्षा लॉक:</b>\n\n` +
-                             `आपके इस स्लॉट में <b>${counts.orders} ऑर्डर (एड्रेस)</b> और <b>${counts.photos} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\n` +
+                             `आपके इस स्लॉट में <b>${counts.orders} ऑर्डर (एड्रेस)</b> Richmond <b>${counts.photos} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\n` +
                              `क्या आप सच में इस डेटा को फाइनल पैकिंग टीम को भेजना चाहते हैं?`;
                              
       bot.sendMessage(chatId, verificationMsg, { parse_mode: 'HTML', ...confirmationMenuKeyboard });
@@ -444,6 +417,7 @@ async function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
+    // 🚀 दोनों तरफ का रिप्लाई ट्रैकर इंजन (रीसेलर जब पुराने मैसेज/ऑर्डर पर रिप्लाई करे) 🚀
     if (msg.reply_to_message && !isEdited) {
       const resellerRepliedToId = msg.reply_to_message.message_id.toString();
       let targetAdminMsgId = resellerToAdminMsgMap.get(resellerRepliedToId);
@@ -461,22 +435,18 @@ async function handleIncomingMessage(msg, isEdited = false) {
         let adminReplyOptions = { reply_to_message_id: parseInt(targetAdminMsgId), parse_mode: 'HTML' };
         let replyNotice = `💬 <b>रीसेलर का जवाब (Reply):</b>\n👤 ${resellerName} (ID: ${chatId})\n\n`;
         
-        let sentLiveMsg = null;
         if (msg.photo) {
-          sentLiveMsg = await bot.sendPhoto(adminGroupId, msg.photo[msg.photo.length - 1].file_id, { caption: replyNotice + (cleanText || "फोटो भेजा"), ...adminReplyOptions });
+          bot.sendPhoto(adminGroupId, msg.photo[msg.photo.length - 1].file_id, { caption: replyNotice + (cleanText || "फोटो भेजा"), ...adminReplyOptions });
         } else if (msg.video) {
-          sentLiveMsg = await bot.sendVideo(adminGroupId, msg.video.file_id, { caption: replyNotice + (cleanText || "वीडियो भेजा"), ...adminReplyOptions });
+          bot.sendVideo(adminGroupId, msg.video.file_id, { caption: replyNotice + (cleanText || "वीडियो भेजा"), ...adminReplyOptions });
         } else if (cleanText !== "") {
-          sentLiveMsg = await bot.sendMessage(adminGroupId, replyNotice + `<code>${escapeHTML(cleanText)}</code>`, adminReplyOptions);
-        }
-
-        if (sentLiveMsg) {
-          adminLiveReplyToResellerMsgMap.set(sentLiveMsg.message_id.toString(), msg.message_id.toString());
+          bot.sendMessage(adminGroupId, replyNotice + `<code>${escapeHTML(cleanText)}</code>`, adminReplyOptions);
         }
         return; 
       }
     }
 
+    // सामान्य बैकग्राउंड सेशन कलेक्शन (यहाँ बोट बीच में कोई मैसेज नहीं भेजेगा, चैट शांत रहेगी)
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], status: 'collecting' };
       userSessions.set(chatId, currentSession);
