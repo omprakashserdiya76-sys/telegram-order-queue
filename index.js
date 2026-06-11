@@ -6,84 +6,95 @@ const adminGroupId = process.env.ADMIN_GROUP_ID;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
+// रेंडर वेब सर्वर स्टेबिलिटी
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji All Resellers Bulletproof Broadcast v12 Final'); 
+  res.end('Engine Active - Omprakash Ji Super Clear Summary Production Mode v9'); 
 });
 server.listen(port);
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
-let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट लॉक
+let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट लॉक के लिए
 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
 
-// सभी रीसेलर्स की आईडी को लाइफटाइम सुरक्षित रखने का डेटाबेस
-const activeResellersDatabase = new Set();
-
+// रीसेलर्स के चालू ऑर्डर सेशन को संभालने के लिए
+// स्टेटस: 'collecting' (डेटा ले रहा है), 'verifying' (पुष्टि मांग रहा है)
 const userSessions = new Map();
+const adminToResellerMsgMap = new Map();
 
-// 🔄 दोनों तरफ की अचूक रिप्लाई ट्रैकिंग मैपिंग तिजोरी 🔄
-const adminToResellerMsgMap = new Map(); // Admin Msg ID -> Reseller Msg ID
-const resellerToAdminMsgMap = new Map(); // Reseller Msg ID -> Admin Msg ID
-const orderIdToAdminMsgMap = new Map();  // Unique Order Key -> Admin Text Message ID
-
+// स्टाइलिश/बोल्ड गणितीय नंबरों को नॉर्मल 0-9 में बदलने वाला क्लीनर इंजन
 function normalizeStylisedText(text) {
   if (!text) return "";
   let str = text.toString();
+  
   const stylishNumbers = {
     '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
-    '🟶': '0', '🟷': '1', '🟸': '2', '🟹': '3', '🟺': '4', '🟻': '5', '🟼': '6', '🟽': '7', '🟾': '8', '🟿': '9',
+    '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟴': '8', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟾': '8', '𝟿': '9',
     '⓪': '0', '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5', '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9',
     '🄀': '0', '⒈': '1', '⒉': '2', '⒊': '3', '⒋': '4', '⒌': '5', '⒍': '6', '⒎': '7', '⒏': '8', '⒐': '9',
     '⓿': '0', '❶': '1', '❷': '2', '❸': '3', '❹': '4', '❺': '5', '❻': '6', '❼': '7', '❽': '8', '❾': '9'
   };
+
   return str.split('').map(char => stylishNumbers[char] || char).join('');
 }
 
 function escapeHTML(text) {
   if (!text) return "";
-  // 🧹 कचरा टेक्स्ट फिल्टर: आईफोन या अन्य सिस्टम का कचरा लाइन तुरंत साफ करना
-  let clean = text.toString()
-    .replace(/Serdiya\s*से\s*प्राप्त\s*फ़ोटो/gi, "")
-    .replace(/से\s*प्राप्त\s*फ़ोटो/gi, "")
-    .trim();
-  return clean.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text.toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
+// --- कीबोर्ड बटन्स टेम्पलेट्स ---
+// मुख्य परमानेंट कीबोर्ड (हमेशा केवल यही दो बटन मुख्य स्क्रीन पर दिखेंगे)
 const permanentMenuKeyboard = {
   reply_markup: {
-    keyboard: [[{ text: "🔴 ऑर्डर पूरा हुआ" }], [{ text: "❌ ऑर्डर रद्द करें / Cancel" }]],
-    resize_keyboard: true, one_time_keyboard: false
+    keyboard: [
+      [{ text: "🔴 ऑर्डर पूरा हुआ" }],
+      [{ text: "❌ ऑर्डर रद्द करें / Cancel" }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
   }
 };
 
+// भूल से बटन दबने से रोकने के लिए डबल वेरिफिकेशन कीबोर्ड
 const confirmationMenuKeyboard = {
   reply_markup: {
-    keyboard: [[{ text: "✅ हाँ, फाइनल है (भेजें)" }], [{ text: "🔙 नहीं, अभी सामान बाकी है" }]],
-    resize_keyboard: true, one_time_keyboard: false
+    keyboard: [
+      [{ text: "✅ हाँ, फाइनल है (भेजें)" }],
+      [{ text: "🔙 नहीं, अभी सामान बाकी है" }]
+    ],
+    resize_keyboard: true,
+    one_time_keyboard: false
   }
 };
 
-// 📊 रोजाना रात 12 बजे ग्रुप में रिपोर्ट लेआउट 📊
+// --- 📊 रोजाना रात 12 बजे ग्रुप में एकदम क्लियर और खुला-खुला रिपोर्ट लेआउट भेजना ---
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
     const indiaTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+    
     if (indiaTime.getHours() === 0 && indiaTime.getMinutes() === 0) {
       if (resellerOrderCounts.size > 0) {
         let reportText = `📊 <b>Daily Orders Report (रात 12:00 बजे)</b> 📊\n`;
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `आज सभी रीसेलर्स के कुल ऑर्डर्स की लिस्ट:\n\n`;
         
+        // एक-एक करके रीसेलर का डेटा एकदम खुला-खुला और साफ़ लाइन में जोड़ना
         for (const [userId, count] of resellerOrderCounts.entries()) {
           const rName = resellerNamesMap.get(userId) || "Reseller";
-          reportText += `👤 <b>नाम:</b> ${escapeHTML(rName)}\n`;
+          const safeName = escapeHTML(rName);
+          
+          reportText += `👤 <b>नाम:</b> ${safeName}\n`;
           reportText += `🆔 <b>ID:</b> <code>${userId}</code>\n`;
           reportText += `📦 <b>कुल ऑर्डर:</b> <b>${count}</b>\n`;
-          reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+          reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`; // हर नाम के बाद एक क्लियर बॉर्डर लाइन और स्पेस
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -92,115 +103,162 @@ function startDailyResetTimer() {
                                 `मार्जिन जुड़वाने के लिए, कृपया शिपिंग charge का भुगतान करें और रसीद मुझे व्हाट्सएप (8890438038)पर भेज दें। धन्यवाद!\n\n` +
                                 `हमारे साथ काम करने के लिए धन्यवाद! 🙏`;
             await bot.sendMessage(userId, personalMsg, { parse_mode: 'HTML' });
-          } catch (err) { console.error(err.message); }
+          } catch (err) {
+            console.error(`Error sending personal report to ${userId}:`, err.message);
+          }
         }
+        
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
-        try { await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'HTML' }); } catch (e) { console.error(e.message); }
+        
+        try {
+          await bot.sendMessage(adminGroupId, reportText, { parse_mode: 'HTML' });
+        } catch (err) {
+          console.error("Error sending report to admin group:", err.message);
+        }
+        
         resellerOrderCounts.clear();
+        resellerNamesMap.clear();
       }
     }
   }, 60000); 
 }
 startDailyResetTimer();
 
+// --- ⚙️ सुधरा हुआ अचूक एड्रेस डिटेक्टर इंजन (मकान नंबर और 2 मोबाइल नंबर से सुरक्षित) ---
 function checkAddressDetails(txt) {
-  if (!txt || txt.toString().trim() === "") return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
+  if (!txt || txt.toString().trim() === "") {
+    return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: "" };
+  }
+  
   let cleanTxt = normalizeStylisedText(txt).trim();
   
-  // कचरा हटाने के बाद की शुद्ध जांच
-  cleanTxt = cleanTxt.replace(/Serdiya\s*से\s*प्राप्त\s*फ़ोटो/gi, "").replace(/से\s*प्राप्त\s*फ़ोटो/gi, "").trim();
+  if (cleanTxt.length < 35) {
+    return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: cleanTxt };
+  }
 
-  if (cleanTxt.length < 35) return { isAddress: false, missing: 'none', isPlainMedia: true, cleanText: cleanTxt };
-
+  // शुद्ध 10 अंकों का स्वतंत्र मोबाइल नंबर खोजना (जो 6-9 से शुरू हो)
   const phoneRegex = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
-  let phoneMatches = []; let match;
+  let phoneMatches = [];
+  let match;
+  
   while ((match = phoneRegex.exec(cleanTxt)) !== null) {
     let rawNum = match[0];
-    if (rawNum.startsWith('91') && rawNum.length > 10) rawNum = rawNum.substring(2);
-    if (rawNum.length === 10) phoneMatches.push(rawNum);
+    if (rawNum.startsWith('91') && rawNum.length > 10) {
+      rawNum = rawNum.substring(2);
+    }
+    if (rawNum.length === 10) {
+      phoneMatches.push(rawNum);
+    }
   }
 
-  const exactPinMatch = cleanTxt.match(/(?<!\d)\d{6}(?!\d)/g);
-  let hasValidPhone = phoneMatches.length > 0;
-  let hasPinCode = exactPinMatch !== null && exactPinMatch.length > 0;
+  if (phoneMatches.length === 0) {
+    let secondaryTxt = cleanTxt.replace(/(?<=\d)[\s-]+(?=\d)/g, "");
+    let secondMatch;
+    const phoneRegexSec = /(?<!\d)(?:91)?[6-9]\d{9}(?!\d)/g;
+    while ((secondMatch = phoneRegexSec.exec(secondaryTxt)) !== null) {
+      let rawNum = secondMatch[0];
+      if (rawNum.startsWith('91') && rawNum.length > 10) {
+        rawNum = rawNum.substring(2);
+      }
+      if (rawNum.length === 10 && !phoneMatches.includes(rawNum)) {
+        phoneMatches.push(rawNum);
+      }
+    }
+  }
 
+  let hasValidPhone = phoneMatches.length > 0;
+  let isPhoneIncomplete = false;
+
+  if (!hasValidPhone) {
+    let fallbackDigits = cleanTxt.match(/(?<!\d)[6-9]\d{5,8}(?!\d)/g);
+    if (fallbackDigits && fallbackDigits.some(d => d.length === 9 || d.length === 7 || d.length === 8)) {
+      isPhoneIncomplete = true;
+    }
+  }
+
+  // शुद्ध 6 अंकों का स्वतंत्र पिनकोड खोजना
+  const exactPinMatch = cleanTxt.match(/(?<!\d)\d{6}(?!\d)/g);
+  const badPinMatch = cleanTxt.match(/(?<!\d)\d{5}(?!\d)|(?<!\d)\d{7}(?!\d)/g);
+
+  let hasPinCode = exactPinMatch !== null && exactPinMatch.length > 0;
+  let isPinIncorrect = !hasPinCode && (badPinMatch !== null && badPinMatch.length > 0);
+
+  let fingerprint = "";
   if (hasValidPhone && hasPinCode) {
-    return { isAddress: true, missing: 'none', isPlainMedia: false, cleanText: cleanTxt, fingerprint: `${phoneMatches[0]}_${exactPinMatch[0]}` };
-  } else if (hasValidPhone && !hasPinCode) {
+    fingerprint = `${phoneMatches[0]}_${exactPinMatch[0]}`;
+    return { isAddress: true, missing: 'none', isPlainMedia: false, cleanText: cleanTxt, fingerprint: fingerprint };
+  } else if (hasValidPhone && (!hasPinCode || isPinIncorrect)) {
     return { isAddress: false, missing: 'pincode', isPlainMedia: false, cleanText: cleanTxt };
-  } else if (!hasValidPhone && hasPinCode) {
+  } else if ((!hasValidPhone || isPhoneIncomplete) && hasPinCode) {
     return { isAddress: false, missing: 'phone', isPlainMedia: false, cleanText: cleanTxt };
   }
+  
   return { isAddress: false, missing: 'both', isPlainMedia: false, cleanText: cleanTxt };
 }
 
-function countOrdersAndPhotosInSession(session) {
-  let orderCount = 0;
-  let photoCount = 0;
-  
-  if (!session || !session.messages) return { orders: 0, photos: 0 };
-
-  session.messages.forEach(m => {
-    if (m.type === 'photo') photoCount++;
-    if (m.type === 'text' || m.type === 'photo' || m.type === 'video') {
-      let textToCheck = m.text || "";
-      let check = checkAddressDetails(textToCheck);
-      if (check.isAddress) orderCount++;
-    }
-  });
-
-  if (orderCount === 0 && (photoCount > 0 || session.messages.length > 0)) {
-    orderCount = 1;
-  }
-
-  return { orders: orderCount, photos: photoCount };
-}
-
+// --- 📦 कतार प्रोसेसिंग इंजन (डबल-वेरिफिकेशन पास होने के बाद चालू होने वाला) ---
 async function processFinalOrder(chatId) {
   const session = userSessions.get(chatId);
   if (!session || session.messages.length === 0) {
-    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है।", permanentMenuKeyboard);
+    await bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
     return;
   }
-  const { userId, resellerName, messages } = session;
-  let entireBundleText = messages.map(m => m.text || "").join("\n").trim();
 
+  const { userId, resellerName, messages } = session;
+
+  let entireBundleText = "";
+  let sampleMsgId = messages[0].originalMsgId;
+  for (const m of messages) {
+    if (m.text) entireBundleText += m.text + "\n";
+  }
+  entireBundleText = entireBundleText.trim();
+
+  // वैलिडेशन चेक
   let globalCheck = checkAddressDetails(entireBundleText);
-  
-  // ❌ नियम: गलत एड्रेस होने पर पुराना ओरिजिनल हेल्पलाइन एरर मैसेज
   if (globalCheck.isAddress === false) {
-    userSessions.delete(chatId);
-    let dynamicReason = globalCheck.missing === 'pincode' ? `❌ <b>आपके एड्रेस में पिनकोड गायब या गलत है!</b>` : (globalCheck.missing === 'phone' ? `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>` : `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`);
+    userSessions.delete(chatId); // 🔄 एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करके अगले आर्डर के लिए ऑटो-रेडी करना
+    
+    let dynamicReason = "";
+    if (globalCheck.missing === 'pincode') {
+      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड (Pincode) गायब या गलत है!</b>`;
+    } else if (globalCheck.missing === 'phone') {
+      dynamicReason = `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>`;
+    } else if (globalCheck.missing === 'both' || globalCheck.isPlainMedia) {
+      dynamicReason = `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`;
+    }
     
     let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
+                   `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
-                   `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस टेक्स्ट नहीं मिला")}</code>\n\n` +
+                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
-                   `📞 <b>9376535752</b>\n` +
-                   `✈️ <b>@Omprakash9950</b>`;
-                   
-    try { await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', ...permanentMenuKeyboard }); } catch (e) { console.error(e.message); }
+                   `📞 <code>9376535752</code>\n` +
+                   `✈️ @Omprakash9950`;
+
+    try {
+      await bot.sendMessage(chatId, alertMsg, { parse_mode: 'HTML', ...permanentMenuKeyboard });
+    } catch (e) { console.error("Alert Sender Failed:", e.message); }
     return; 
   }
 
-  // ❌ नियम: डुप्लीकेट ऑर्डर होने पर 30 मिनट वाला सुरक्षा मैसेज
+  // 30 मिनट डुप्लीकेट ऑर्डर लॉक पहरा
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
-      userSessions.delete(chatId);
+      userSessions.delete(chatId); // 🔄 डुप्लीकेट एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करना
       
       let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
                      `अगर सच में आपका नया ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
                      `🚨 <b>आपका पुराना डेटा साफ़ कर दिया गया है। बोट नए ऑर्डर के लिए रेडी है, आप सीधे नया आर्डर भेज सकते हैं।</b>\n\n` +
                      `━━━━━━━━━━━━━━━━━━━━\n` +
                      `👤 <b>ओमप्रकाश</b>\n` +
-                     `📞 <b>9376535752</b>\n` +
-                     `✈️ <b>@Omprakash9950</b>`;
-                     
-      try { await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', ...permanentMenuKeyboard }); } catch (e) { console.error(e.message); }
+                     `📞 <code>9376535752</code>\n` +
+                     `✈️ @Omprakash9950`;
+      try {
+        await bot.sendMessage(chatId, dupAlert, { parse_mode: 'HTML', ...permanentMenuKeyboard });
+      } catch (e) { console.error("Duplicate Alert Failed:", e.message); }
       return; 
     } else {
       recentOrdersMap.set(lockKey, true);
@@ -208,115 +266,201 @@ async function processFinalOrder(chatId) {
     }
   }
 
+  // सफलतापूर्वक पास होने पर सेशन क्लियर करें (अगले नए ऑर्डर के लिए ऑटो-रेडी) और रीसेलर नेम मैप करें
   userSessions.delete(chatId);
   resellerNamesMap.set(userId, resellerName);
 
-  // 📸 पुराना मीडिया इंजन (ओरिजिनल ID ट्रैकिंग के साथ)
-  let finalMediaItems = [];
+  // स्मार्ट सेपरेटर (जोड़ा बनाना)
+  let separatedOrders = [];
   for (const m of messages) {
     if (m.type === 'photo' || m.type === 'video') {
-      finalMediaItems.push({ type: m.type, media: m.fileId, originalMsgId: m.originalMsgId });
+      let addrCheck = checkAddressDetails(m.text);
+      if (m.text && m.text.trim().length >= 35 && addrCheck.isAddress) {
+        separatedOrders.push({
+          text: addrCheck.cleanText,
+          media: [m],
+          timestamp: m.timestamp,
+          originalMsgId: m.originalMsgId,
+          isRealOrder: true
+        });
+      } else {
+        let nearestTextMsg = null;
+        let minDiff = Infinity;
+
+        for (const tMsg of messages) {
+          if (tMsg.type === 'text') {
+            let tCheck = checkAddressDetails(tMsg.text);
+            if (tCheck.isAddress) {
+              let diff = Math.abs(m.timestamp - tMsg.timestamp);
+              if (diff < minDiff) {
+                minDiff = diff;
+                nearestTextMsg = tMsg;
+              }
+            }
+          }
+        }
+
+        if (nearestTextMsg) {
+          let tCheck = checkAddressDetails(nearestTextMsg.text);
+          let existingOrder = separatedOrders.find(o => o.text === tCheck.cleanText);
+          if (existingOrder) {
+            existingOrder.media.push(m);
+          } else {
+            separatedOrders.push({
+              text: tCheck.cleanText,
+              media: [m],
+              timestamp: nearestTextMsg.timestamp,
+              originalMsgId: nearestTextMsg.originalMsgId,
+              isRealOrder: true
+            });
+          }
+        } else {
+          if (separatedOrders.length > 0) {
+            separatedOrders[separatedOrders.length - 1].media.push(m);
+          } else {
+            separatedOrders.push({
+              text: "",
+              media: [m],
+              timestamp: m.timestamp,
+              originalMsgId: m.originalMsgId,
+              isRealOrder: false
+            });
+          }
+        }
+      }
+    } else if (m.type === 'text') {
+      let addrCheck = checkAddressDetails(m.text);
+      let isAlreadyIncluded = separatedOrders.some(o => o.text === addrCheck.cleanText);
+      
+      if (!isAlreadyIncluded) {
+        separatedOrders.push({
+          text: addrCheck.cleanText,
+          media: [],
+          timestamp: m.timestamp,
+          originalMsgId: m.originalMsgId,
+          isRealOrder: addrCheck.isAddress
+        });
+      }
     }
   }
 
-  globalDeliveryQueue.push({
-    userId: userId,
-    resellerName: resellerName,
-    addressText: globalCheck.cleanText,
-    mediaItems: finalMediaItems,
-    messagesContext: messages
-  });
+  for (const order of separatedOrders) {
+    globalDeliveryQueue.push({
+      userId: userId,
+      resellerName: resellerName,
+      orderData: order,
+      messagesContext: messages
+    });
+  }
 
-  await bot.sendMessage(chatId, "✅ आपका आदेश सफलतापूर्वक स्वीकार कर लिया गया है और packing टीम को भेज दिया गया है!\n\n🔄 <b>बोट अगले नए ऑर्डर के लिए तैयार (Ready) है, आप सीधे नया माल भेज सकते हैं।</b>", permanentMenuKeyboard);
+  await bot.sendMessage(chatId, "✅ आपका ऑर्डर सफलतापूर्वक स्वीकार कर लिया गया है और पैकिंग टीम को भेज दिया गया है!\n\n🔄 <b>बोट अगले नए ऑर्डर के लिए तैयार (Ready) है, आप सीधे नया माल भेज सकते हैं।</b>", permanentMenuKeyboard);
   triggerQueueProcessor();
 }
 
-// 🎯 आपका 15 सेकंड गैप वाला नियम: रीसेलर A के बाद रीसेलर B का ऑर्डर पूरे 15 सेकंड बाद ही ग्रुप में फॉरवर्ड होगा!
+// ⚠️ प्रत्येक अलग ऑर्डर के बीच पूरे 15 सेकंड का गैप रखने वाला इंजन ⚠️
 async function triggerQueueProcessor() {
   if (isProcessingQueue || globalDeliveryQueue.length === 0) return;
   isProcessingQueue = true;
+
   while (globalDeliveryQueue.length > 0) {
     const currentTask = globalDeliveryQueue.shift();
     await deliverOrderToAdminGroup(currentTask);
+
     if (globalDeliveryQueue.length > 0) {
       await new Promise(resolve => setTimeout(resolve, 15000)); 
     }
   }
+
   isProcessingQueue = false;
 }
 
-// 📦 एड्रेस ऊपर -> बिना गैप के तुरंत नीचे ग्रिड -> डिवाइडर इंजन 📦
+// एडमिन ग्रुप डिलीवरी इंजन
 async function deliverOrderToAdminGroup(task) {
-  const { userId, resellerName, addressText, mediaItems, messagesContext } = task;
+  const { userId, resellerName, orderData, messagesContext } = task;
+  const { text: combinedText, media: mediaItems, isRealOrder: initialRealCheck, originalMsgId: orderOriginalMsgId } = orderData;
   const safeResellerName = escapeHTML(resellerName);
-  let sampleMsgId = messagesContext && messagesContext.length > 0 ? messagesContext[0].originalMsgId.toString() : "0";
-
-  let currentCount = resellerOrderCounts.get(userId) || 0;
-  currentCount++;
-  resellerOrderCounts.set(userId, currentCount);
-
-  let cleanName = resellerName.replace(/[^a-zA-Z0-9]/g, "");
-  let namePart = cleanName.substring(0, 2).toUpperCase();
-  if (namePart.length < 2) namePart = "OR";
-  let idPart = userId.toString().substring(userId.toString().length - 1);
-  let assignedOrderNumStr = `${namePart}${idPart}-${currentCount.toString().padStart(3, '0')}`;
-
-  // ✍️ स्टेप १: सबसे ऊपर केवल शुद्ध एड्रेस संदेश भेजना
-  let orderHeader = `${escapeHTML(addressText)}\n\n👤 ${safeResellerName}\n🆔 ID: ${userId}\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
-  let textMessageId = null;
   
-  try {
-    let sentHeader = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'HTML' });
-    if (sentHeader) {
-      textMessageId = sentHeader.message_id.toString();
-      adminToResellerMsgMap.set(textMessageId, sampleMsgId);
-      resellerToAdminMsgMap.set(sampleMsgId, textMessageId);
-      
-      const uniqueOrderLockKey = `${userId}_${assignedOrderNumStr}`;
-      orderIdToAdminMsgMap.set(uniqueOrderLockKey, textMessageId);
-    }
-  } catch (e) { console.error("Text Head Error:", e.message); }
+  let sampleMsgId = orderOriginalMsgId || (mediaItems.length > 0 ? mediaItems[0].originalMsgId : messagesContext[0].originalMsgId);
 
-  // 🖼️ स्टेप २: ठीक उसके नीचे बिना किसी गैप के सुंदर चौकट ग्रिड भेजना (सटीक फोटो मैपिंग के साथ)
-  if (mediaItems.length > 0 && textMessageId) {
-    let chunks = [];
-    for (let i = 0; i < mediaItems.length; i += 10) {
-      chunks.push(mediaItems.slice(i, i + 10));
-    }
+  let assignedOrderNumStr = null;
+  let isRealOrder = false;
 
-    for (let chunkIdx = 0; chunkIdx < chunks.length; chunkIdx++) {
-      let currentChunk = chunks[chunkIdx];
-      let mediaGroupPayload = currentChunk.map((item, index) => {
-        let obj = { type: item.type, media: item.media };
-        if (index === 0) {
-          obj.caption = `👤 ${safeResellerName}\n📦 <b>ORD # ${assignedOrderNumStr}</b> ${chunks.length > 1 ? `(भाग ${chunkIdx + 1}/${chunks.length})` : ''}`;
-          obj.parse_mode = 'HTML';
-        }
-        return obj;
-      });
+  let finalCheck = checkAddressDetails(combinedText);
+  if (combinedText.length >= 35 && finalCheck.isAddress) {
+    isRealOrder = true;
+    let currentCount = resellerOrderCounts.get(userId) || 0;
+    currentCount++;
+    resellerOrderCounts.set(userId, currentCount);
 
-      try {
-        let sentMediaBatch = await bot.sendMediaGroup(adminGroupId, mediaGroupPayload);
-        if (sentMediaBatch && sentMediaBatch.length > 0) {
-          for (let index = 0; index < sentMediaBatch.length; index++) {
-            const msgOfBatch = sentMediaBatch[index];
-            const correspondingResellerMsgId = currentChunk[index] ? currentChunk[index].originalMsgId.toString() : sampleMsgId;
-            // 🎯 सटीक फोटो रिप्लाई फिक्स: हर फोटो की आईडी रीसेलर के ओरिजिनल मैसेज से 100% लिंक
-            adminToResellerMsgMap.set(msgOfBatch.message_id.toString(), correspondingResellerMsgId);
-          }
-        }
-      } catch (e) { console.error("Grid Send Error:", e.message); }
-    }
+    let cleanName = resellerName.replace(/[^a-zA-Z0-9]/g, "");
+    let namePart = cleanName.substring(0, 2).toUpperCase();
+    if (namePart.length < 2) namePart = "OR";
+    let idPart = userId.toString().substring(userId.toString().length - 1);
+
+    assignedOrderNumStr = `${namePart}${idPart}-${currentCount.toString().padStart(3, '0')}`;
   }
 
-  // 🟢 स्टेप ३: पूरा ऑर्डर ख़त्म होते ही तुरंत नीचे डिवाइडर टेक्स्ट डालना
-  try {
-    await bot.sendMessage(adminGroupId, `🟢 <b>Next Order</b> 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'HTML' });
-  } catch (e) { console.error("Divider Error:", e.message); }
+  if (mediaItems.length === 0 && initialRealCheck && !isRealOrder) return; 
+  if (mediaItems.length === 0 && combinedText.length >= 35 && finalCheck.isAddress && !isRealOrder) return; 
+
+  let groupHeaderMsgId = null;
+  if (isRealOrder) {
+    try {
+      let orderHeader = `${escapeHTML(combinedText)}\n\n👤 ${safeResellerName}\nID: ${userId}\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
+      let sentHeader = await bot.sendMessage(adminGroupId, orderHeader, { parse_mode: 'HTML' });
+      if (sentHeader) {
+        groupHeaderMsgId = sentHeader.message_id.toString();
+        adminToResellerMsgMap.set(groupHeaderMsgId, sampleMsgId.toString());
+      }
+    } catch (e) { console.error("Header Send Error:", e.message); }
+  }
+
+  for (const mediaItem of mediaItems) {
+    try {
+      let caption = `👤 ${safeResellerName}\nID: ${userId}`;
+      if (assignedOrderNumStr) {
+        caption += `\n📦 <b>ORD # ${assignedOrderNumStr}</b>`;
+      }
+      if (!isRealOrder && combinedText !== "") {
+        caption += `\n\n📝 विवरण: ${escapeHTML(combinedText)}`;
+      }
+
+      let sentMedia = null;
+      if (mediaItem.type === 'photo') {
+        sentMedia = await bot.sendPhoto(adminGroupId, mediaItem.fileId, { caption: caption, parse_mode: 'HTML' });
+      } else if (mediaItem.type === 'video') {
+        sentMedia = await bot.sendVideo(adminGroupId, mediaItem.fileId, { caption: caption, parse_mode: 'HTML' });
+      }
+
+      if (sentMedia && !isRealOrder) {
+        adminToResellerMsgMap.set(sentMedia.message_id.toString(), mediaItem.originalMsgId.toString());
+      } else if (sentMedia && isRealOrder && groupHeaderMsgId) {
+        adminToResellerMsgMap.set(sentMedia.message_id.toString(), sampleMsgId.toString());
+      }
+    } catch (e) { console.error("Media Send Error:", e.message); }
+  }
+
+  if (mediaItems.length === 0 && combinedText !== "" && !isRealOrder) {
+    try {
+      let normalText = `👤 ${safeResellerName} (ID: ${userId})\n📝: ${escapeHTML(combinedText)}`;
+      let sentTxt = await bot.sendMessage(adminGroupId, normalText, { parse_mode: 'HTML' });
+      if (sentTxt) {
+        adminToResellerMsgMap.set(sentTxt.message_id.toString(), sampleMsgId.toString());
+      }
+    } catch (e) { console.error("Pure Text Send Error:", e.message); }
+  }
+
+  if (isRealOrder) {
+    try {
+      await bot.sendMessage(adminGroupId, `🟢 <b>Next Order</b> 🟢\n━━━━━━✧━━━━━━`, { parse_mode: 'HTML' });
+    } catch (e) { console.error("Divider Error:", e.message); }
+  }
 }
 
-async function handleIncomingMessage(msg, isEdited = false) {
+// --- टेलीग्राम संदेश एवं एडिट नियंत्रक इंजन ---
+function handleIncomingMessage(msg, isEdited = false) {
   if (!msg.chat || !msg.from) return;
+
   const chatId = msg.chat.id.toString();
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   if (!resellerName) resellerName = "Reseller";
@@ -324,166 +468,142 @@ async function handleIncomingMessage(msg, isEdited = false) {
   let cleanText = (msg.text || msg.caption || "").trim();
   let currentTimestamp = msg.date;
 
-  // 📢 रूट १: एडमिन ग्रुप इंजन (@all ब्रॉडकास्ट फ़िल्टर एवं पर्सनल रिप्लाई)
-  if (chatId === adminGroupId) {
-    if (isEdited) return;
-
-    // 🚀 @all कड़क डिटेक्टर - ब्रॉडकास्ट इंजन 🚀
-    if (cleanText.toLowerCase().startsWith('@all') && msg.text) {
-      let actualBroadcastNotice = cleanText.substring(4).trim();
-      if (actualBroadcastNotice.length > 0) {
-        
-        let finalBroadCastList = new Set([
-          ...activeResellersDatabase,
-          ...resellerOrderCounts.keys(),
-          ...resellerNamesMap.keys()
-        ]);
-
-        let successCount = 0;
-        finalBroadCastList.forEach((targetResellerId) => {
-          try {
-            bot.sendMessage(targetResellerId, actualBroadcastNotice);
-            successCount++;
-          } catch (err) { console.error(`Broadcast failed for ${targetResellerId}:`, err.message); }
-        });
-        bot.sendMessage(adminGroupId, `📢 <b>ब्रॉडकास्ट सफल!</b>\nयह सूचना सभी <b>${successCount}</b> एक्टिव और रजिस्टर्ड रीसेलर्स को पर्सनल इनबॉक्स में एक साथ भेज दी गई है।`, { parse_mode: 'HTML' });
-      }
-      return;
-    }
-
-    // सामान्य पैकिंग रिप्लाई काम (ग्रुप टू पर्सनल) - 🛠️ एरर फिक्स के साथ सुरक्षित async/await
-    if (msg.reply_to_message) {
+  // एडमिन ग्रुप रिप्लाई रूट सिस्टम (ग्रुप टू पर्सनल)
+  if (chatId === adminGroupId && msg.reply_to_message && !isEdited) {
+    const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
+    const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
+    
+    if (idMatch) {
+      const targetId = idMatch[1].trim();
       const adminRepliedMsgId = msg.reply_to_message.message_id.toString();
       const originalResellerMsgId = adminToResellerMsgMap.get(adminRepliedMsgId);
       
-      const sourceText = msg.reply_to_message.text || msg.reply_to_message.caption || "";
-      const idMatch = sourceText.match(/ID:\s*(-?\d+)/);
-      
-      if (idMatch) {
-        const targetId = idMatch[1].trim();
-        let replyOptions = {};
-        if (originalResellerMsgId) replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
+      let replyOptions = {};
+      if (originalResellerMsgId) replyOptions.reply_to_message_id = parseInt(originalResellerMsgId);
 
-        try {
-          if (msg.photo) {
-            await bot.sendPhoto(targetId, msg.photo[msg.photo.length - 1].file_id, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
-          } else if (msg.video) {
-            await bot.sendVideo(targetId, msg.video.file_id, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
-          } else if (msg.text) {
-            await bot.sendMessage(targetId, cleanText, replyOptions);
-          }
-        } catch (err) { console.error("Admin Reply Deliver Error:", err.message); }
+      if (msg.photo) {
+        const photoId = msg.photo[msg.photo.length - 1].file_id;
+        bot.sendPhoto(targetId, photoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
+        return;
+      }
+      if (msg.video) {
+        const videoId = msg.video.file_id;
+        bot.sendVideo(targetId, videoId, { caption: cleanText || "आपका पार्सल पैक हो गया है! 🎉", ...replyOptions });
+        return;
+      }
+      if (msg.text) {
+        bot.sendMessage(targetId, cleanText, replyOptions);
+        return;
       }
     }
     return;
   }
 
-  // 🔄 रूट २: रीसेलर साइड (निजी चैट बटन एवं दोनों तरफ की रिप्लाई ट्रैकिंग)
+  // रीसेलर साइड (निजी चैट बटन सिस्टम नियंत्रण)
   if (chatId !== adminGroupId) {
+    
+    // 🛡️ सख्त साधारण स्टिकर ब्लॉकर
     if (msg.sticker) return; 
 
-    // ब्रॉडकास्ट डेटाबेस के लिए लाइफटाइम यूजर आईडी सेव करना
-    activeResellersDatabase.add(chatId);
-
+    // ✂️ मास्टरस्ट्रोक नियम: 8 अक्षर/शब्द से छोटे सिंगल प्रीमियम कस्टम इमोजी स्टिकर को जड़ से रोकना
     if (cleanText !== "") {
-      if ((cleanText.length < 8 || msg.entities?.some(e => e.type === 'custom_emoji')) && !checkAddressDetails(cleanText).isAddress) {
-        return; 
+      let isShortMessage = cleanText.length < 8;
+      let hasCustomEmoji = false;
+      
+      if (msg.entities || msg.caption_entities) {
+        const targetEntities = msg.entities || msg.caption_entities;
+        hasCustomEmoji = targetEntities.some(ent => ent.type === 'custom_emoji');
+      }
+
+      // यदि मैसेज 8 अक्षर से छोटा है और उसमें कोई एड्रेस नहीं है, तो उसे सिंगल ग्रुप में जाने से रोकना (ड्राप करना)
+      let addrCheck = checkAddressDetails(cleanText);
+      if (isShortMessage && !addrCheck.isAddress) {
+        return; // मेमोरी में भी जमा नहीं होगा, सीधे रिजेक्ट
+      }
+      if (hasCustomEmoji && !addrCheck.isAddress) {
+        return; // प्रीमियम हरे टिक वाले कस्टम इमोजी को रोकना
       }
     }
 
     let currentSession = userSessions.get(chatId);
 
+    // बटन कमांड चेक (❌ ऑर्डर रद्द करना)
     if (cleanText === "❌ ऑर्डर रद्द करें / Cancel") {
-      userSessions.delete(chatId);
-      bot.sendMessage(chatId, "🔴 <b>आपका चालू ऑर्डर रद्द (Reset) कर दिया गया है!</b>\n\n🔄 बोट नए ऑर्डर के लिए रेडी है, आप सीधे नया माल भेज सकते हैं।", { parse_mode: 'HTML', ...permanentMenuKeyboard });
+      userSessions.delete(chatId); // 🧹 मेमोरी से तुरंत पूरा पुराना डेटा क्लियर
+      bot.sendMessage(chatId, "🔴 <b>आपका चालू ऑर्डर रद्द (Reset) कर दिया गया है!</b>\n\n🔄 बोट नए ऑर्डर के लिए रेडी है, आप सीधे अपनी नई फोटो और एड्रेस भेजना शुरू कर सकते हैं।", { parse_mode: 'HTML', ...permanentMenuKeyboard });
       return;
     }
 
-    // 🧮 आर्डर पूरा हुआ - लाइव काउंटिंग सुरक्षा लॉक 🧮
+    // बटन कमांड चेक (🔴 ऑर्डर पूरा हुआ) -> भूल से दबाने से रोकने के लिए डबल वेरिफिकेशन मोड एक्टिव करना
     if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
       if (!currentSession || currentSession.messages.length === 0) {
-        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है।", permanentMenuKeyboard);
+        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
         return;
       }
-      currentSession.status = 'verifying';
-      
-      const counts = countOrdersAndPhotosInSession(currentSession);
-      
-      let verificationMsg = `📝 <b>भूल-चूक सुरक्षा लॉक:</b>\n\n` +
-                             `आपके इस स्लॉट में <b>${counts.orders} ऑर्डर (एड्रेस)</b> और <b>${counts.photos} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\n` +
-                             `क्या आप सच में इस डेटा को फाइनल पैकिंग टीम को भेजना चाहते हैं?`;
-                             
-      bot.sendMessage(chatId, verificationMsg, { parse_mode: 'HTML', ...confirmationMenuKeyboard });
+      currentSession.status = 'verifying'; // स्टेटस बदलकर पुष्टिकरण मोड पर सेट करना
+      bot.sendMessage(chatId, "⚠️ <b>भूल-चूक सुरक्षा लॉक:</b>\n\nक्या आप सच में इस ऑर्डर को फाइनल पैकिंग टीम को भेजना चाहते हैं?\n\nयदि अभी कोई फोटो या सामान बाकी है, तो नीचे 'सामान बाकी है' बटन दबाएं।", confirmationMenuKeyboard);
       return;
     }
 
-    if (cleanText === "✅ हाँ, फाइनल है (भेजें)") {
-      if (currentSession && currentSession.status === 'verifying') { processFinalOrder(chatId); }
+    // डबल वेरिफिकेशन: हाँ, फाइनल है (भेजें)
+    if (cleanText === "✅ हाँ, FINAL है (भेजें)" || cleanText === "✅ हाँ, फाइनल है (भेजें)") {
+      if (currentSession && currentSession.status === 'verifying') {
+        processFinalOrder(chatId);
+      } else {
+        bot.sendMessage(chatId, "कृपया सीधे अपना सामान और एड्रेस भेजना शुरू करें।", permanentMenuKeyboard);
+      }
       return;
     }
 
+    // डबल वेरिफिकेशन: नहीं, अभी सामान बाकी है
     if (cleanText === "🔙 नहीं, अभी सामान बाकी है") {
       if (currentSession) {
-        currentSession.status = 'collecting';
-        bot.sendMessage(chatId, "📥 <b>ऑर्डर मोड यथावत चालू है!</b>\n\nआप अपनी बची हुई तस्वीरें या एड्रेस भेज सकते हैं।", permanentMenuKeyboard);
+        currentSession.status = 'collecting'; // वापस नॉर्मल कलेक्शन मोड पर लाना
+        bot.sendMessage(chatId, "📥 <b>ऑर्डर मोड यथावत चालू है!</b>\n\nआप अपनी बची हुई तस्वीरें या एड्रेस भेज सकते हैं। पूरा होने पर दोबारा '🔴 ऑर्डर पूरा हुआ' दबाएं।", permanentMenuKeyboard);
+      } else {
+        bot.sendMessage(chatId, "नया ऑर्डर भेजने के लिए सीधे फोटो और एड्रेस भेजना शुरू करें।", permanentMenuKeyboard);
       }
       return;
     }
 
-    // 🚀 दोनों तरफ का रिप्लाई ट्रैकर इंजन 🚀
-    if (msg.reply_to_message && !isEdited) {
-      const resellerRepliedToId = msg.reply_to_message.message_id.toString();
-      let targetAdminMsgId = resellerToAdminMsgMap.get(resellerRepliedToId);
-
-      if (!targetAdminMsgId) {
-        const sourceTxt = msg.reply_to_message.text || msg.reply_to_message.caption || "";
-        const ordMatch = sourceTxt.match(/ORD\s*#\s*([A-Z0-9-]+)/i);
-        if (ordMatch) {
-          const foundOrdNum = ordMatch[1].trim();
-          targetAdminMsgId = orderIdToAdminMsgMap.get(`${chatId}_${foundOrdNum}`);
-        }
-      }
-
-      if (targetAdminMsgId) {
-        let adminReplyOptions = { reply_to_message_id: parseInt(targetAdminMsgId), parse_mode: 'HTML' };
-        let replyNotice = `💬 <b>रीसेलर का जवाब (Reply):</b>\n👤 ${resellerName} (ID: ${chatId})\n\n`;
-        
-        try {
-          if (msg.photo) {
-            bot.sendPhoto(adminGroupId, msg.photo[msg.photo.length - 1].file_id, { caption: replyNotice + (cleanText || "फोटो भेजा"), ...adminReplyOptions });
-          } else if (msg.video) {
-            bot.sendVideo(adminGroupId, msg.video.file_id, { caption: replyNotice + (cleanText || "वीडियो भेजा"), ...adminReplyOptions });
-          } else if (cleanText !== "") {
-            bot.sendMessage(adminGroupId, replyNotice + `<code>${escapeHTML(cleanText)}</code>`, adminReplyOptions);
-          }
-        } catch (err) { console.error("Reseller Reply Forward Error:", err.message); }
-        return; 
-      }
-    }
-
+    // 🟢 ऑटो-स्टार्ट सेशन: रीसेलर्स के सीधे माल भेजते ही सेशन बैकग्राउंड में खुद चालू हो जाएगा
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], status: 'collecting' };
       userSessions.set(chatId, currentSession);
     }
-    if (currentSession.status === 'verifying') currentSession.status = 'collecting';
+
+    // यदि रीसेलर पुष्टिकरण मोड में होने के बावजूद बटन दबाने के बजाय नया माल भेजने लगे
+    if (currentSession.status === 'verifying' && cleanText !== "✅ हाँ, फाइनल है (भेजें)" && cleanText !== "🔙 नहीं, अभी सामान बाकी है") {
+      currentSession.status = 'collecting';
+    }
 
     if (isEdited) {
-      let idx = currentSession.messages.findIndex(m => m.originalMsgId === msg.message_id);
-      if (idx !== -1) currentSession.messages[idx].text = cleanText;
+      let existingMsgIdx = currentSession.messages.findIndex(m => m.originalMsgId === msg.message_id);
+      if (existingMsgIdx !== -1) {
+        currentSession.messages[existingMsgIdx].text = cleanText;
+      }
       return;
     }
 
+    // कतार में डेटा सुरक्षित स्टोर करना
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
       currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
+      bot.sendMessage(chatId, "📸 फोटो प्राप्त हुई! (मेमोरी में सुरक्षित)", permanentMenuKeyboard);
     } else if (msg.video) {
       const videoId = msg.video.file_id;
       currentSession.messages.push({ type: 'video', fileId: videoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
+      bot.sendMessage(chatId, "🎥 वीडियो प्राप्त हुई! (मेमोरी में सुरक्षित)", permanentMenuKeyboard);
     } else if (cleanText !== "") {
       currentSession.messages.push({ type: 'text', text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
     }
   }
 }
 
-bot.on('message', (msg) => handleIncomingMessage(msg, false));
-bot.on('edited_message', (msg) => handleIncomingMessage(msg, true));
+bot.on('message', (msg) => {
+  handleIncomingMessage(msg, false);
+});
+
+bot.on('edited_message', (msg) => {
+  handleIncomingMessage(msg, true);
+});
