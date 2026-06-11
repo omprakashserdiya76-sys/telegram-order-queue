@@ -15,7 +15,7 @@ const bot = new TelegramBot(token, {
 // रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Syntax Fixed Bulletproof Engine v17'); 
+  res.end('Engine Active - Omprakash Ji Async Fixed Engine v18'); 
 });
 server.listen(port);
 
@@ -185,7 +185,7 @@ async function processFinalOrder(chatId) {
                    `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और收藏 प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <b>9376535752</b>\n` +
@@ -317,7 +317,8 @@ async function deliverOrderToAdminGroup(task) {
   } catch (e) { console.error("Divider Error:", e.message); }
 }
 
-function handleIncomingMessage(msg, isEdited = false) {
+// 🚀 पूरे फंक्शन को ASYNC बनाकर सभी लाइव रिप्लाइज को सिंतैक्स-प्रूफ किया गया 🚀
+async function handleIncomingMessage(msg, isEdited = false) {
   if (!msg || !msg.chat || !msg.from) return;
   const chatId = msg.chat.id.toString();
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
@@ -330,7 +331,7 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId === adminGroupId) {
     if (isEdited) return;
 
-    // 🚀 बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए - फिक्स्ड) 🚀
+    // 🚀 बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन
     if (cleanText && cleanText.toLowerCase().startsWith('@all')) {
       let actualBroadcastNotice = cleanText.substring(4).trim();
       
@@ -361,7 +362,7 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // 🔄 पैकिंग टीम का जवाब (ग्रुप टू पर्सनल - टू-वे रिप्लाई लिंकिंग लॉक) 🔄
+    // 🔄 पैकिंग टीम का जवाब (ग्रुप टू पर्सनल)
     if (msg.reply_to_message) {
       const adminRepliedMsgId = msg.reply_to_message.message_id.toString();
       
