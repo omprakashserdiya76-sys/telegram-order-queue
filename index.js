@@ -9,7 +9,7 @@ const bot = new TelegramBot(token, { polling: true });
 // रेंडर वेब सर्वर स्टेबिलिटी (Render Active Mode)
 const port = process.env.PORT || 10000;
 const server = http.createServer((req, res) => { 
-  res.end('Engine Active - Omprakash Ji Multimedia Broadcast Production v14'); 
+  res.end('Engine Active - Omprakash Ji Fixed Crash-Proof Production v15'); 
 });
 server.listen(port);
 
@@ -65,7 +65,7 @@ const confirmationMenuKeyboard = {
   }
 };
 
-// 📊 रोजाना रात 12 बजे ग्रुप में एकदम क्लियर और खुला-खुला रिपोर्ट लेआउट 📊
+// 📊 रोजाना रात 12 बजे ग्रुप में एकदम रिपोर्ट लेआउट 📊
 function startDailyResetTimer() {
   setInterval(async () => {
     const now = new Date();
@@ -161,7 +161,7 @@ async function processFinalOrder(chatId) {
 
   let globalCheck = checkAddressDetails(entireBundleText);
   
-  // ❌ नियम: गलत एड्रेस होने पर ओमप्रकाश जी का नया कड़क हेल्पलाइन एरर मैसेज ❌
+  // ❌ नियम: गलत एड्रेस हेल्पलाइन एरर मैसेज ❌
   if (globalCheck.isAddress === false) {
     userSessions.delete(chatId);
     let dynamicReason = globalCheck.missing === 'pincode' ? `❌ <b>आपके एड्रेस में पिनकोड गायब या गलत है!</b>` : (globalCheck.missing === 'phone' ? `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>` : `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`);
@@ -170,7 +170,7 @@ async function processFinalOrder(chatId) {
                    `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <b>9376535752</b>\n` +
@@ -180,7 +180,7 @@ async function processFinalOrder(chatId) {
     return; 
   }
 
-  // ❌ नियम: डुप्लीकेट ऑर्डर होने पर ओमप्रकाश जी का नया कड़क 30 मिनट वाला मैसेज ❌
+  // ❌ नियम: डुप्लीकेट ऑर्डर 30 मिनट वाला लॉक ❌
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
@@ -303,20 +303,21 @@ async function deliverOrderToAdminGroup(task) {
 }
 
 function handleIncomingMessage(msg, isEdited = false) {
-  if (!msg.chat || !msg.from) return;
+  if (!msg || !msg.chat || !msg.from) return;
   const chatId = msg.chat.id.toString();
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   if (!resellerName) resellerName = "Reseller";
 
+  // 🛡️ सेफ्टी गार्ड: टेक्स्ट और कैप्शन को खाली होने से बचाना ताकि रेंडर क्रैश न हो
   let cleanText = (msg.text || msg.caption || "").trim();
   let currentTimestamp = msg.date;
 
-  // 📢 रूट १: एडमिन ग्रुप इंजन (@all मल्टीमीडिया ब्रॉडकास्ट फ़िल्टर एवं लाइव रिप्लाई ट्रैकर)
+  // 📢 रूट १: एडमिन ग्रुप इंजन
   if (chatId === adminGroupId) {
     if (isEdited) return;
 
-    // 🚀 कड़क डिटेक्टर - बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए) 🚀
-    if (cleanText.toLowerCase().startsWith('@all')) {
+    // 🚀 बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन (टेक्स्ट, फोटो, वीडियो तीनों के लिए क्रैश सेफ्टी के साथ) 🚀
+    if (cleanText && cleanText.toLowerCase().startsWith('@all')) {
       let actualBroadcastNotice = cleanText.substring(4).trim();
       
       let finalBroadCastList = new Set([
@@ -330,13 +331,10 @@ function handleIncomingMessage(msg, isEdited = false) {
         finalBroadCastList.forEach((targetResellerId) => {
           try {
             if (msg.photo) {
-              // फोटो + कैप्शन ब्रॉडकास्ट
               bot.sendPhoto(targetResellerId, msg.photo[msg.photo.length - 1].file_id, { caption: actualBroadcastNotice });
             } else if (msg.video) {
-              // वीडियो + कैप्शन ब्रॉडकास्ट
               bot.sendVideo(targetResellerId, msg.video.file_id, { caption: actualBroadcastNotice });
             } else if (msg.text) {
-              // सिर्फ शुद्ध टेक्स्ट ब्रॉडकास्ट
               if (actualBroadcastNotice.length > 0) {
                 bot.sendMessage(targetResellerId, actualBroadcastNotice);
               }
@@ -382,14 +380,14 @@ function handleIncomingMessage(msg, isEdited = false) {
     return;
   }
 
-  // 🔄 रूट २: रीसेलर साइड (निजी चैट बटन एवं दोनों तरफ की रिप्लाई ट्रैकिंग)
+  // 🔄 रूट २: रीसेलर साइड
   if (chatId !== adminGroupId) {
     if (msg.sticker) return; 
 
     activeResellersDatabase.add(chatId);
 
     if (cleanText !== "") {
-      if ((cleanText.length < 8 || msg.entities?.some(e => e.type === 'custom_emoji')) && !checkAddressDetails(cleanText).isAddress) {
+      if ((cleanText.length < 8 || (msg.entities && msg.entities.some(e => e.type === 'custom_emoji'))) && !checkAddressDetails(cleanText).isAddress) {
         return; 
       }
     }
