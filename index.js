@@ -15,7 +15,7 @@ server.listen(port);
 
 let resellerOrderCounts = new Map(); 
 let resellerNamesMap = new Map(); 
-let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट锁
+let recentOrdersMap = new Map(); // 30 मिनट डुप्लीकेट लॉक
 
 let globalDeliveryQueue = [];
 let isProcessingQueue = false;
@@ -164,7 +164,7 @@ async function processFinalOrder(chatId) {
     let dynamicReason = globalCheck.missing === 'pincode' ? `❌ <b>आपके एड्रेस में पिनकोड गायब या गलत है!</b>` : (globalCheck.missing === 'phone' ? `❌ <b>आपके एड्रेस में मोबाइल नंबर गायब या अधूरा है!</b>` : `❌ <b>आपके एड्रेस में पिनकोड और मोबाइल नंबर दोनों गलत या गायब हैं!</b>`);
     
     let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
+                   `यह आपका ऑर्डर आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस नहीं मिला")}</code>\n\n` +
                    `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
@@ -206,7 +206,7 @@ async function processFinalOrder(chatId) {
   let finalMediaItems = [];
   for (const m of messages) {
     if (m.type === 'photo' || m.type === 'video') {
-      finalMediaItems.push({ type: m.type, media: m.fileId });
+      finalMediaItems.push({ type: m.type, media: m.fileId, originalMsgId: m.originalMsgId });
     }
   }
 
@@ -268,7 +268,7 @@ async function deliverOrderToAdminGroup(task) {
     }
   } catch (e) { console.error("Text Head Error:", e.message); }
 
-  // 🖼️ स्टेप २: ठीक उसके नीचे बिना किसी गैप के (0 सेकंड में) सुंदर चौकट ग्रिड भेजना
+  // 🖼️ स्टेप २: ठीक उसके नीचे बिना किसी गैप के सुंदर चौकट ग्रिड भेजना (प्रत्येक फोटो आईडी को रीसेलर की ओरिजिनल फोटो से लिंक करना)
   if (mediaItems.length > 0 && textMessageId) {
     let chunks = [];
     for (let i = 0; i < mediaItems.length; i += 10) {
@@ -289,8 +289,11 @@ async function deliverOrderToAdminGroup(task) {
       try {
         let sentMediaBatch = await bot.sendMediaGroup(adminGroupId, mediaGroupPayload);
         if (sentMediaBatch && sentMediaBatch.length > 0) {
-          for (const msgOfBatch of sentMediaBatch) {
-            adminToResellerMsgMap.set(msgOfBatch.message_id.toString(), sampleMsgId);
+          for (let index = 0; index < sentMediaBatch.length; index++) {
+            const msgOfBatch = sentMediaBatch[index];
+            const correspondingResellerMsgId = currentChunk[index] ? currentChunk[index].originalMsgId.toString() : sampleMsgId;
+            // 🎯 अचूक इलाज: ग्रुप के प्रत्येक फोटो मैसेज को रीसेलर के सटीक फोटो मैसेज आईडी से मैप कर दिया गया है
+            adminToResellerMsgMap.set(msgOfBatch.message_id.toString(), correspondingResellerMsgId);
           }
         }
       } catch (e) { console.error("Grid Send Error:", e.message); }
@@ -303,7 +306,7 @@ async function deliverOrderToAdminGroup(task) {
   } catch (e) { console.error("Divider Error:", e.message); }
 }
 
-function handleIncomingMessage(msg, isEdited = false) {
+async function handleIncomingMessage(msg, isEdited = false) {
   if (!msg.chat || !msg.from) return;
   const chatId = msg.chat.id.toString();
   let resellerName = msg.from.username ? `@${msg.from.username}` : `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
@@ -316,12 +319,11 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId === adminGroupId) {
     if (isEdited) return;
 
-    // 🚀 @all कड़क डिटेक्टर - बुलेटप्रूफ ऑल रीसेलर्स ब्रॉडकास्ट इंजन 🚀
+    // 🚀 @all कड़क डिटेक्टर - ब्रॉडकास्ट इंजन 🚀
     if (cleanText.toLowerCase().startsWith('@all') && msg.text) {
       let actualBroadcastNotice = cleanText.substring(4).trim();
       if (actualBroadcastNotice.length > 0) {
         
-        // 🎯 अचूक समाधान: मेमोरी के सभी मुमकिन रीसेलर्स को एक फाइनल मास्टर लिस्ट में इकट्ठा करना
         let finalBroadCastList = new Set([
           ...activeResellersDatabase,
           ...resellerOrderCounts.keys(),
@@ -417,7 +419,7 @@ function handleIncomingMessage(msg, isEdited = false) {
       return;
     }
 
-    // 🚀 दोनों तरफ का रिप्लाई ट्रैकर इंजन (रीसेलर जब पुराने मैसेज/ऑर्डर पर रिप्लाई करे) 🚀
+    // 🚀 दोनों तरफ का रिप्लाई ट्रैकर इंजन 🚀
     if (msg.reply_to_message && !isEdited) {
       const resellerRepliedToId = msg.reply_to_message.message_id.toString();
       let targetAdminMsgId = resellerToAdminMsgMap.get(resellerRepliedToId);
