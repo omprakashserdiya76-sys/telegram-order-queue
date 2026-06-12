@@ -86,7 +86,7 @@ function startDailyResetTimer() {
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `आज सभी रीसेलर्स के कुल ऑर्डर्स की लिस्ट:\n\n`;
         
-        let grandTotalOrders = 0; 
+        let grandTotalOrders = 0; // सभी रीसेलर्स के ऑर्डर्स का कुल टोटल जोड़ गिनने के लिए
         
         // एक-एक करके रीसेलर का डेटा एकदम खुला-खुला और साफ़ लाइन में जोड़ना
         for (const [userId, count] of resellerOrderCounts.entries()) {
@@ -96,9 +96,9 @@ function startDailyResetTimer() {
           reportText += `👤 <b>नाम:</b> ${safeName}\n`;
           reportText += `🆔 <b>ID:</b> <code>${userId}</code>\n`;
           reportText += `📦 <b>कुल ऑर्डर:</b> <b>${count}</b>\n`;
-          reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`; 
+          reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`; // हर नाम के बाद एक क्लियर बॉर्डर लाइन और स्पेस
           
-          grandTotalOrders += count; 
+          grandTotalOrders += count; // यहाँ सभी का टोटल जुड़ रहा है
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -112,6 +112,7 @@ function startDailyResetTimer() {
           }
         }
         
+        // 🎯 सिर्फ यह नीचे टोटल जोड़ने का नियम एक्स्ट्रा ऐड किया है:
         reportText += `📦 <b>आज के कुल ऑल ओवर ऑर्डर्स (Total):</b> <b>${grandTotalOrders}</b> 🎉\n`;
         reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`;
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
@@ -222,7 +223,7 @@ async function processFinalOrder(chatId) {
   // वैलिडेशन चेक
   let globalCheck = checkAddressDetails(entireBundleText);
   if (globalCheck.isAddress === false) {
-    userSessions.delete(chatId); 
+    userSessions.delete(chatId); // 🔄 एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करके अगले आर्डर के लिए ऑटो-रेडी करना
     
     let dynamicReason = "";
     if (globalCheck.missing === 'pincode') {
@@ -237,7 +238,7 @@ async function processFinalOrder(chatId) {
                    `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस टेक्स्ट नहीं मिला")}</code>\n\n` +
-                   `🚨 <b>आपका आदेश ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
+                   `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
                    `━━━━━━━━━━━━━━━━━━━━\n` +
                    `👤 <b>ओमप्रकाश</b>\n` +
                    `📞 <code>9376535752</code>\n` +
@@ -249,11 +250,11 @@ async function processFinalOrder(chatId) {
     return; 
   }
 
-  // 30 मिनट डुप्लीकेट ऑर्डर锁 पहरा
+  // 30 मिनट डुप्लीकेट ऑर्डर लॉक पहरा
   if (globalCheck.isAddress && globalCheck.fingerprint) {
     const lockKey = `${userId}_${globalCheck.fingerprint}`;
     if (recentOrdersMap.has(lockKey)) {
-      userSessions.delete(chatId); 
+      userSessions.delete(chatId); // 🔄 डुप्लीकेट एरर आते ही तुरंत सेशन खुद ऑटो-कैंसल (रीसेट) करना
       
       let dupAlert = `❌ <b>यह डुप्लीकेट ऑर्डर है!</b>\n\n` +
                      `अगर सच में आपका नया ऑर्डर है तो कृपया 30 मिनट बाद में प्रयास करें।\n\n` +
@@ -272,7 +273,7 @@ async function processFinalOrder(chatId) {
     }
   }
 
-  // सफलतापूर्वक पास होने पर सेशन क्लियर करें और रीसेलर नेम मैप करें
+  // सफलतापूर्वक पास होने पर सेशन क्लियर करें (अगले नए ऑर्डर के लिए ऑटो-रेडी) और रीसेलर नेम मैप करें
   userSessions.delete(chatId);
   resellerNamesMap.set(userId, resellerName);
 
@@ -527,7 +528,7 @@ function handleIncomingMessage(msg, isEdited = false) {
 
     if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
       if (!currentSession || currentSession.messages.length === 0) {
-        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई... डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
+        bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
         return;
       }
       currentSession.status = 'verifying';
@@ -540,7 +541,7 @@ function handleIncomingMessage(msg, isEdited = false) {
       });
       if (orderCount === 0 && photoCount > 0) orderCount = 1;
 
-      bot.sendMessage(chatId, `📝 <b>भूल-चूक सुरक्षा लॉक:</b>\n\nआपके इस स्लॉट में <b>${orderCount} ऑर्डर (एड्रेस)</b> और <b>${photoCount} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\nक्या आप सच में इस डेटा को फाइनल पैकिंग टीम को भेजना चाहते हैं?`, { parse_mode: 'HTML', ...confirmationMenuKeyboard });
+      bot.sendMessage(chatId, `📝 <b>भूल-चूक सुरक्षा लॉक:</b>\n\nआपके इस स्लॉट में <b>${orderCount} ऑर्डर (एड्रेस)</b> और <b>${photoCount} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\nक्या आप सच में इस डेटा को FINAL पैकिंग टीम को भेजना चाहते हैं?`, { parse_mode: 'HTML', ...confirmationMenuKeyboard });
       return;
     }
 
