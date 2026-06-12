@@ -32,7 +32,7 @@ function normalizeStylisedText(text) {
   
   const stylishNumbers = {
     '𝟬': '0', '𝟭': '1', '𝟮': '2', '𝟯': '3', '𝟰': '4', '𝟱': '5', '𝟲': '6', '𝟳': '7', '𝟴': '8', '𝟵': '9',
-    '🟶': '0', '🟷': '1', '🟸': '2', '🟹': '3', '🟺': '4', '🟻': '5', '🟼': '6', '🟽': '7', '🟾': '8', '🟿': '9',
+    '𝟶': '0', '𝟷': '1', '𝟸': '2', '𝟹': '3', '𝟴': '8', '𝟻': '5', '𝟼': '6', '𝟽': '7', '𝟾': '8', '𝟿': '9',
     '⓪': '0', '①': '1', '②': '2', '③': '3', '④': '4', '⑤': '5', '⑥': '6', '⑦': '7', '⑧': '8', '⑨': '9',
     '🄀': '0', '⒈': '1', '⒉': '2', '⒊': '3', '⒋': '4', '⒌': '5', '⒍': '6', '⒎': '7', '⒏': '8', '⒐': '9',
     '⓿': '0', '❶': '1', '❷': '2', '❸': '3', '❹': '4', '❺': '5', '❻': '6', '❼': '7', '❽': '8', '❾': '9'
@@ -86,8 +86,6 @@ function startDailyResetTimer() {
         reportText += `━━━━━━━━━━━━━━━━━━━━\n`;
         reportText += `आज सभी रीसेलर्स के कुल ऑर्डर्स की लिस्ट:\n\n`;
         
-        let grandTotalOrders = 0; // सभी रीसेलर्स के ऑर्डर्स का कुल टोटल जोड़ गिनने के लिए
-        
         // एक-एक करके रीसेलर का डेटा एकदम खुला-खुला और साफ़ लाइन में जोड़ना
         for (const [userId, count] of resellerOrderCounts.entries()) {
           const rName = resellerNamesMap.get(userId) || "Reseller";
@@ -97,8 +95,6 @@ function startDailyResetTimer() {
           reportText += `🆔 <b>ID:</b> <code>${userId}</code>\n`;
           reportText += `📦 <b>कुल ऑर्डर:</b> <b>${count}</b>\n`;
           reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`; // हर नाम के बाद एक क्लियर बॉर्डर लाइन और स्पेस
-          
-          grandTotalOrders += count; // यहाँ सभी का टोटल जुड़ रहा है
           
           try {
             const personalMsg = `नमस्कार! आज आपके कुल <b>${count}</b> ऑर्डर सफलतापूर्वक स्वीकार किए गए हैं\n\n` +
@@ -112,9 +108,6 @@ function startDailyResetTimer() {
           }
         }
         
-        // 🎯 सिर्फ यह नीचे टोटल जोड़ने का नियम एक्स्ट्रा ऐड किया है:
-        reportText += `📦 <b>आज के कुल ऑल ओवर ऑर्डर्स (Total):</b> <b>${grandTotalOrders}</b> 🎉\n`;
-        reportText += `━━━━━━━━━━━━━━━━━━━━\n\n`;
         reportText += `✅ सभी रीसेलर्स को पर्सनल समरी भेज दी गई है और काउंट रीसेट कर दिया गया है!`;
         
         try {
@@ -235,7 +228,7 @@ async function processFinalOrder(chatId) {
     }
     
     let alertMsg = `${dynamicReason}\n\n` +
-                   `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी आदेश स्वीकार किया जाएगा।\n\n` +
+                   `यह आपका आदेश आगे packing के लिए नहीं जाएगा, क्योंकि इसमें आवश्यक जानकारी सही नहीं है। सही एड्रेस के साथ फिर से फोटो भेजेंगे तभी ऑर्डर स्वीकार किया जाएगा।\n\n` +
                    `📝 <b>आपका भेजा गया अधूरा एड्रेस ये था:</b>\n` +
                    `<code>${escapeHTML(globalCheck.cleanText || "एड्रेस टेक्स्ट नहीं मिला")}</code>\n\n` +
                    `🚨 <b>आपका ऑर्डर ऑटो-कैंसल कर दिया गया है। बोट अगले ऑर्डर के लिए रेडी है, कृपया मोबाइल नंबर (10 अंक), पिनकोड (6 अंक) और प्रोडक्ट फोटो के साथ पूरा एड्रेस सीधे दोबारा भेजना शुरू करें!</b> 🚨\n\n` +
@@ -510,81 +503,107 @@ function handleIncomingMessage(msg, isEdited = false) {
   if (chatId !== adminGroupId) {
     
     // 🛡️ सख्त साधारण स्टिकर ब्लॉकर
-    if (msg.sticker) return;
+    if (msg.sticker) return; 
 
+    // ✂️ मास्टरस्ट्रोक नियम: 8 अक्षर/शब्द से छोटे सिंगल प्रीमियम कस्टम इमोजी स्टिकर को जड़ से रोकना
     if (cleanText !== "") {
-      if ((cleanText.length < 8 || msg.entities?.some(e => e.type === 'custom_emoji')) && !checkAddressDetails(cleanText).isAddress) {
-        return; 
+      let isShortMessage = cleanText.length < 8;
+      let hasCustomEmoji = false;
+      
+      if (msg.entities || msg.caption_entities) {
+        const targetEntities = msg.entities || msg.caption_entities;
+        hasCustomEmoji = targetEntities.some(ent => ent.type === 'custom_emoji');
+      }
+
+      // यदि मैसेज 8 अक्षर से छोटा है और उसमें कोई एड्रेस नहीं है, तो उसे सिंगल ग्रुप में जाने से रोकना (ड्राप करना)
+      let addrCheck = checkAddressDetails(cleanText);
+      if (isShortMessage && !addrCheck.isAddress) {
+        return; // मेमोरी में भी जमा नहीं होगा, सीधे रिजेक्ट
+      }
+      if (hasCustomEmoji && !addrCheck.isAddress) {
+        return; // प्रीमियम हरे टिक वाले कस्टम इमोजी को रोकना
       }
     }
 
     let currentSession = userSessions.get(chatId);
 
+    // बटन कमांड चेक (❌ ऑर्डर रद्द करना)
     if (cleanText === "❌ ऑर्डर रद्द करें / Cancel") {
-      userSessions.delete(chatId);
-      bot.sendMessage(chatId, "🔴 <b>आपका चालू ऑर्डर रद्द (Reset) कर दिया गया है!</b>\n\n🔄 बोट नए ऑर्डर के लिए रेडी है, आप सीधे नया माल भेज सकते हैं।", { parse_mode: 'HTML', ...permanentMenuKeyboard });
+      userSessions.delete(chatId); // 🧹 मेमोरी से तुरंत पूरा पुराना डेटा क्लियर
+      bot.sendMessage(chatId, "🔴 <b>आपका चालू ऑर्डर रद्द (Reset) कर दिया गया है!</b>\n\n🔄 बोट नए ऑर्डर के लिए रेडी है, आप सीधे अपनी नई फोटो और एड्रेस भेजना शुरू कर सकते हैं।", { parse_mode: 'HTML', ...permanentMenuKeyboard });
       return;
     }
 
+    // बटन कमांड चेक (🔴 ऑर्डर पूरा हुआ) -> भूल से दबाने से रोकने के लिए डबल वेरिफिकेशन मोड एक्टिव करना
     if (cleanText === "🔴 ऑर्डर पूरा हुआ") {
       if (!currentSession || currentSession.messages.length === 0) {
         bot.sendMessage(chatId, "⚠️ आपके पास प्रोसेस करने के लिए कोई डेटा नहीं है। कृपया सीधे प्रोडक्ट फोटो और एड्रेस भेजकर शुरुआत करें।", permanentMenuKeyboard);
         return;
       }
-      currentSession.status = 'verifying';
-      
-      let orderCount = 0;
-      let photoCount = 0;
-      currentSession.messages.forEach(m => {
-        if (m.type === 'photo') photoCount++;
-        if (m.text && checkAddressDetails(m.text).isAddress) orderCount++;
-      });
-      if (orderCount === 0 && photoCount > 0) orderCount = 1;
-
-      bot.sendMessage(chatId, `📝 <b>भूल-चूक सुरक्षा लॉक:</b>\n\nआपके इस स्लॉट में <b>${orderCount} ऑर्डर (एड्रेस)</b> और <b>${photoCount} प्रोडक्ट फोटो</b> प्राप्त हुई हैं।\n\nक्या आप सच में इस डेटा को FINAL पैकिंग टीम को भेजना चाहते हैं?`, { parse_mode: 'HTML', ...confirmationMenuKeyboard });
+      currentSession.status = 'verifying'; // स्टेटस बदलकर पुष्टिकरण मोड पर सेट करना
+      bot.sendMessage(chatId, "⚠️ <b>भूल-चूक सुरक्षा लॉक:</b>\n\nक्या आप सच में इस ऑर्डर को फाइनल पैकिंग टीम को भेजना चाहते हैं?\n\nयदि अभी कोई फोटो या सामान बाकी है, तो नीचे 'सामान बाकी है' बटन दबाएं।", confirmationMenuKeyboard);
       return;
     }
 
-    if (cleanText === "✅ हाँ, फाइनल है (भेजें)") {
+    // डबल वेरिफिकेशन: हाँ, फाइनल है (भेजें)
+    if (cleanText === "✅ हाँ, FINAL है (भेजें)" || cleanText === "✅ हाँ, फाइनल है (भेजें)") {
       if (currentSession && currentSession.status === 'verifying') {
         processFinalOrder(chatId);
+      } else {
+        bot.sendMessage(chatId, "कृपया सीधे अपना सामान और एड्रेस भेजना शुरू करें।", permanentMenuKeyboard);
       }
       return;
     }
 
+    // डबल वेरिफिकेशन: नहीं, अभी सामान बाकी है
     if (cleanText === "🔙 नहीं, अभी सामान बाकी है") {
       if (currentSession) {
-        currentSession.status = 'collecting';
-        bot.sendMessage(chatId, "📥 <b>ऑर्डर मोड यथावत चालू है!</b>\n\nआप अपनी बची हुई तस्वीरें या एड्रेस भेज सकते हैं।", permanentMenuKeyboard);
+        currentSession.status = 'collecting'; // वापस नॉर्मल कलेक्शन मोड पर लाना
+        bot.sendMessage(chatId, "📥 <b>ऑर्डर मोड यथावत चालू है!</b>\n\nआप अपनी बची हुई तस्वीरें या एड्रेस भेज सकते हैं। पूरा होने पर दोबारा '🔴 ऑर्डर पूरा हुआ' दबाएं।", permanentMenuKeyboard);
+      } else {
+        bot.sendMessage(chatId, "नया ऑर्डर भेजने के लिए सीधे फोटो और एड्रेस भेजना शुरू करें।", permanentMenuKeyboard);
       }
       return;
     }
 
+    // 🟢 ऑटो-स्टार्ट सेशन: रीसेलर्स के सीधे माल भेजते ही सेशन बैकग्राउंड में खुद चालू हो जाएगा
     if (!currentSession) {
       currentSession = { userId: chatId, resellerName: resellerName, messages: [], status: 'collecting' };
       userSessions.set(chatId, currentSession);
     }
-    if (currentSession.status === 'verifying') currentSession.status = 'collecting';
+
+    // यदि रीसेलर पुष्टिकरण मोड में होने के बावजूद बटन दबाने के बजाय नया माल भेजने लगे
+    if (currentSession.status === 'verifying' && cleanText !== "✅ हाँ, फाइनल है (भेजें)" && cleanText !== "🔙 नहीं, अभी सामान बाकी है") {
+      currentSession.status = 'collecting';
+    }
 
     if (isEdited) {
-      let idx = currentSession.messages.findIndex(m => m.originalMsgId === msg.message_id);
-      if (idx !== -1) {
-        currentSession.messages[idx].text = cleanText;
+      let existingMsgIdx = currentSession.messages.findIndex(m => m.originalMsgId === msg.message_id);
+      if (existingMsgIdx !== -1) {
+        currentSession.messages[existingMsgIdx].text = cleanText;
       }
       return;
     }
 
+    // कतार में डेटा सुरक्षित स्टोर करना
     if (msg.photo) {
       const photoId = msg.photo[msg.photo.length - 1].file_id;
       currentSession.messages.push({ type: 'photo', fileId: photoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
+      bot.sendMessage(chatId, "📸 फोटो प्राप्त हुई! (मेमोरी में सुरक्षित)", permanentMenuKeyboard);
     } else if (msg.video) {
       const videoId = msg.video.file_id;
       currentSession.messages.push({ type: 'video', fileId: videoId, text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
+      bot.sendMessage(chatId, "🎥 वीडियो प्राप्त हुई! (मेमोरी में सुरक्षित)", permanentMenuKeyboard);
     } else if (cleanText !== "") {
       currentSession.messages.push({ type: 'text', text: cleanText, timestamp: currentTimestamp, originalMsgId: msg.message_id });
     }
   }
 }
 
-bot.on('message', (msg) => handleIncomingMessage(msg, false));
-bot.on('edited_message', (msg) => handleIncomingMessage(msg, true));
+bot.on('message', (msg) => {
+  handleIncomingMessage(msg, false);
+});
+
+bot.on('edited_message', (msg) => {
+  handleIncomingMessage(msg, true);
+});
